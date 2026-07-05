@@ -790,7 +790,18 @@ async function showPlanos(){
       abajo.textContent = '↓'; abajo.disabled = idx === lista.length - 1;
       abajo.className = 'del-btn'; abajo.style.flex = '1';
       abajo.onclick = async (ev) => { ev.stopPropagation(); await moverPlano(lista, idx, 1); };
-      fila.appendChild(arriba); fila.appendChild(abajo);
+      const renombrar = document.createElement('button');
+      renombrar.textContent = 'Renombrar';
+      renombrar.className = 'del-btn'; renombrar.style.flex = '2';
+      renombrar.onclick = async (ev) => {
+        ev.stopPropagation();
+        const nuevo = prompt('Nombre del plano:', pl.etiqueta);
+        if(!nuevo || !nuevo.trim()) return;
+        const { error } = await sb.from('planos').update({ etiqueta: nuevo.trim() }).eq('id', pl.id);
+        if(error){ alert('No se pudo renombrar: ' + error.message); return; }
+        showPlanos();
+      };
+      fila.appendChild(arriba); fila.appendChild(abajo); fila.appendChild(renombrar);
       card.appendChild(fila);
     }
     card.onclick = () => openPlano(pl);
