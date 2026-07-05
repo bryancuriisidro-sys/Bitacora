@@ -970,7 +970,11 @@ async function seleccionarPunto(pt){
   compareSelection = [];
   renderPins();
   $('side').innerHTML = '<div class="loading-box">Cargando fotos…</div>';
-  const { data: fotos } = await sb.from('fotos').select('*').eq('punto_id', pt.id).order('fecha');
+  const { data: fotosRaw } = await sb.from('fotos').select('*').eq('punto_id', pt.id);
+  const fotos = (fotosRaw || []).sort((a, b) => {
+    if(a.es_referencia !== b.es_referencia) return a.es_referencia ? -1 : 1;
+    return (b.fecha || '').localeCompare(a.fecha || '');
+  });
   pt._tieneFoto = (fotos || []).length > 0;
   renderSide(pt, fotos || []);
 }
@@ -1079,7 +1083,20 @@ function loadImageFromFile(file){
 }
 function dataUrlBytes(dataUrl){ return Math.ceil((dataUrl.split(',')[1] || '').length * 0.75); }
 
-async function compressImage(file, forceFlat){
+function dibujarMarcaAgua(ctx, width, height, texto){
+  const fontSize = Math.max(16, Math.round(width * 0.02));
+  ctx.font = `${fontSize}px Arial, sans-serif`;
+  const paddingX = fontSize * 0.9;
+  const barHeight = fontSize * 2;
+  const textWidth = ctx.measureText(texto).width;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, height - barHeight, Math.min(width, textWidth + paddingX * 2), barHeight);
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(texto, paddingX, height - barHeight / 2);
+}
+
+async function compressImage(file, forceFlat, marcaTexto){
   const img = await loadImageFromFile(file);
   const isPano = !forceFlat && Math.abs((img.naturalWidth / img.naturalHeight) - 2) < 0.15;
   const MAX_BYTES = (isPano ? 4.3 : 2.5) * 1024 * 1024;
@@ -1090,7 +1107,9 @@ async function compressImage(file, forceFlat){
     if(width > maxDim){ height = Math.round(height * (maxDim / width)); width = maxDim; }
     const canvas = document.createElement('canvas');
     canvas.width = width; canvas.height = height;
-    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    if(marcaTexto){ dibujarMarcaAgua(ctx, width, height, marcaTexto); }
     const dataUrl = canvas.toDataURL('image/jpeg', quality);
     if(dataUrlBytes(dataUrl) <= MAX_BYTES || (maxDim < 700 && quality <= 0.4)) return dataUrl;
     maxDim = Math.round(maxDim * 0.8);
