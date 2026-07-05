@@ -626,6 +626,23 @@ $('inviteGenBtn').onclick = async () => {
   };
 };
 
+let miSesionId = null;
+let intervaloSesion = null;
+
+async function iniciarSeguimientoDeSesion(){
+  if(intervaloSesion) return; // ya está corriendo, no duplicar
+  const { data, error } = await sb.from('sesiones').insert({
+    usuario_id: session.user.id, empresa_id: miUsuario.empresa_id, email: session.user.email
+  }).select().single();
+  if(error || !data) return;
+  miSesionId = data.id;
+  intervaloSesion = setInterval(() => {
+    if(document.hidden) return; // no cuenta tiempo si la pestaña está en segundo plano
+    sb.from('sesiones').update({ ultima_actividad: new Date().toISOString() }).eq('id', miSesionId)
+      .then(() => {}).catch(() => {});
+  }, 120000); // cada 2 minutos
+}
+
 async function boot(){
   const { data: { session: s } } = await sb.auth.getSession();
   session = s;
@@ -647,6 +664,7 @@ async function boot(){
   sb.from('accesos').insert({
     usuario_id: session.user.id, empresa_id: miUsuario.empresa_id, email: session.user.email
   }).then(() => {}).catch(() => {});
+  iniciarSeguimientoDeSesion();
   const { data: empresa } = await sb.from('empresas').select('*').eq('id', miUsuario.empresa_id).single();
   $('empresaLabel').textContent = miUsuario.super_admin
     ? 'Bitácora · Super admin (todas las empresas)'
