@@ -285,6 +285,7 @@
     </div>
   </header>
 
+  <button id="backBtn" class="del-btn" style="display:none;margin-bottom:12px;font-size:12px;padding:9px 16px;">← Volver</button>
   <div class="crumbs" id="crumbs"></div>
 
   <div id="empresasView" style="display:none">
@@ -301,6 +302,7 @@
 
   <div id="planoDetailView" style="display:none">
     <div class="toolbar">
+      <select id="floorSwitcher" style="min-width:180px;"></select>
       <span class="hint" id="planHint">Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos</span>
       <button class="del-btn" id="replacePlanoBtn">Reemplazar plano</button>
       <div class="stats" id="stats"></div>
@@ -665,6 +667,20 @@ function renderCrumbs(){
   if(proyectoActual){ parts.push('<span class="sep">/</span>', `<b onclick="showPlanos()">${proyectoActual.nombre}</b>`); }
   if(planoActual){ parts.push('<span class="sep">/</span>', `<span>${planoActual.etiqueta}</span>`); }
   $('crumbs').innerHTML = parts.join(' ');
+
+  const backBtn = $('backBtn');
+  if(planoActual){
+    backBtn.style.display = '';
+    backBtn.onclick = () => showPlanos();
+  } else if(proyectoActual){
+    backBtn.style.display = '';
+    backBtn.onclick = () => showProyectos();
+  } else if(miUsuario.super_admin && empresaContexto){
+    backBtn.style.display = '';
+    backBtn.onclick = () => showEmpresas();
+  } else {
+    backBtn.style.display = 'none';
+  }
 }
 
 function showView(name){
@@ -749,9 +765,11 @@ async function showPlanos(){
   renderCrumbs();
   showView('planos');
   const { data } = await sb.from('planos').select('*').eq('proyecto_id', proyectoActual.id).order('orden');
+  const lista = data || [];
+  const puedeReordenar = miUsuario.rol !== 'visor';
   const list = $('planosList');
   list.innerHTML = '';
-  (data || []).forEach(pl => {
+  lista.forEach((pl, idx) => {
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `<div class="name">${pl.etiqueta}</div>`;
@@ -760,6 +778,20 @@ async function showPlanos(){
       img.src = pl.imagen_url;
       img.style.cssText = 'width:100%;height:100px;object-fit:cover;margin-top:8px;';
       card.appendChild(img);
+    }
+    if(puedeReordenar){
+      const fila = document.createElement('div');
+      fila.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
+      const arriba = document.createElement('button');
+      arriba.textContent = '↑'; arriba.disabled = idx === 0;
+      arriba.className = 'del-btn'; arriba.style.flex = '1';
+      arriba.onclick = async (ev) => { ev.stopPropagation(); await moverPlano(lista, idx, -1); };
+      const abajo = document.createElement('button');
+      abajo.textContent = '↓'; abajo.disabled = idx === lista.length - 1;
+      abajo.className = 'del-btn'; abajo.style.flex = '1';
+      abajo.onclick = async (ev) => { ev.stopPropagation(); await moverPlano(lista, idx, 1); };
+      fila.appendChild(arriba); fila.appendChild(abajo);
+      card.appendChild(fila);
     }
     card.onclick = () => openPlano(pl);
     list.appendChild(card);
@@ -771,6 +803,17 @@ async function showPlanos(){
   list.appendChild(newCard);
 }
 window.showPlanos = showPlanos;
+
+async function moverPlano(lista, idx, direccion){
+  const vecino = lista[idx + direccion];
+  const actual = lista[idx];
+  if(!vecino) return;
+  const ordenActual = actual.orden || 0;
+  const ordenVecino = vecino.orden || 0;
+  await sb.from('planos').update({ orden: ordenVecino }).eq('id', actual.id);
+  await sb.from('planos').update({ orden: ordenActual }).eq('id', vecino.id);
+  showPlanos();
+}
 
 function nuevoPlano(){
   const input = document.createElement('input');
@@ -789,7 +832,9 @@ function nuevoPlano(){
     const { error: upErr } = await sb.storage.from(BUCKET).upload(path, archivo.blob, { contentType: 'image/jpeg' });
     if(upErr){ alert('Error subiendo la imagen: ' + upErr.message); return; }
     const { data: pub } = sb.storage.from(BUCKET).getPublicUrl(path);
-    const { error: insErr } = await sb.from('planos').insert({ proyecto_id: proyectoActual.id, etiqueta, imagen_url: pub.publicUrl });
+    const { data: existentes } = await sb.from('planos').select('orden').eq('proyecto_id', proyectoActual.id).order('orden', { ascending: false }).limit(1);
+    const siguienteOrden = existentes && existentes.length ? (existentes[0].orden || 0) + 1 : 0;
+    const { error: insErr } = await sb.from('planos').insert({ proyecto_id: proyectoActual.id, etiqueta, imagen_url: pub.publicUrl, orden: siguienteOrden });
     if(insErr){ alert('Error guardando el plano: ' + insErr.message); return; }
     showPlanos();
   };
@@ -813,7 +858,25 @@ async function openPlano(pl){
     $('planHint').textContent = 'Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos';
     $('replacePlanoBtn').style.display = '';
   }
+  await cargarSelectorPisos();
   await cargarPuntos();
+}
+
+async function cargarSelectorPisos(){
+  const { data } = await sb.from('planos').select('*').eq('proyecto_id', proyectoActual.id).order('orden');
+  const sel = $('floorSwitcher');
+  sel.innerHTML = '';
+  (data || []).forEach(pl => {
+    const opt = document.createElement('option');
+    opt.value = pl.id;
+    opt.textContent = pl.etiqueta;
+    if(pl.id === planoActual.id) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.onchange = () => {
+    const elegido = (data || []).find(pl => pl.id === sel.value);
+    if(elegido) openPlano(elegido);
+  };
 }
 
 $('replacePlanoBtn').onclick = () => {
