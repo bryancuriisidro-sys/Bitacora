@@ -494,19 +494,20 @@ async function showPlanos(){
 window.showPlanos = showPlanos;
 
 function nuevoPlano(){
-  const etiqueta = prompt('Nombre del plano (ej. Piso 3, Sótano 1):');
-  if(!etiqueta) return;
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;
+    const etiqueta = prompt('Nombre del plano (ej. Piso 3, Sótano 1):');
+    if(!etiqueta) return;
     const path = `planos/${proyectoActual.id}/${Date.now()}_${file.name}`;
     const { error: upErr } = await sb.storage.from(BUCKET).upload(path, file);
     if(upErr){ alert('Error subiendo la imagen: ' + upErr.message); return; }
     const { data: pub } = sb.storage.from(BUCKET).getPublicUrl(path);
-    await sb.from('planos').insert({ proyecto_id: proyectoActual.id, etiqueta, imagen_url: pub.publicUrl });
+    const { error: insErr } = await sb.from('planos').insert({ proyecto_id: proyectoActual.id, etiqueta, imagen_url: pub.publicUrl });
+    if(insErr){ alert('Error guardando el plano: ' + insErr.message); return; }
     showPlanos();
   };
   input.click();
