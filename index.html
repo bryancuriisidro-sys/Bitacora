@@ -312,6 +312,26 @@
 
 <div class="expand-backdrop" id="expandBackdrop"></div>
 
+<div id="inviteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;padding:26px;max-width:380px;width:100%;border-radius:8px;">
+    <h3 style="margin:0 0 4px;font-family:Georgia,serif;font-size:18px;font-weight:400;">Invitar colega</h3>
+    <p style="font-size:12px;color:#6b665c;margin:0 0 18px;">Genera un código para que se una a tu empresa. Por ahora se lo compartes tú mismo (WhatsApp, correo) — el envío automático de correo es un paso aparte.</p>
+    <label style="display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6b665c;margin-bottom:5px;">Correo (referencia)</label>
+    <input type="email" id="inviteEmail" placeholder="colega@empresa.com" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #E4E0D6;border-radius:8px;margin-bottom:14px;">
+    <label style="display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6b665c;margin-bottom:5px;">Rol</label>
+    <select id="inviteRol" style="width:100%;padding:9px 10px;border:1px solid #E4E0D6;border-radius:8px;margin-bottom:16px;">
+      <option value="editor">Editor — crea puntos y sube fotos</option>
+      <option value="visor">Visor — solo puede ver</option>
+      <option value="admin">Admin — puede todo, incluso invitar</option>
+    </select>
+    <div id="inviteResult" style="font-size:13px;margin-bottom:14px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button id="inviteCancelBtn" style="flex:1;padding:10px;background:#fff;border:1px solid #E4E0D6;border-radius:8px;cursor:pointer;font-size:12px;text-transform:uppercase;">Cerrar</button>
+      <button id="inviteGenBtn" style="flex:1;padding:10px;background:#1B4965;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;text-transform:uppercase;">Generar código</button>
+    </div>
+  </div>
+</div>
+
 <div id="cropModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
   <p style="color:#fff;font-size:13px;margin:0 0 12px;">Arrastra las esquinas para encuadrar solo la parte del plano que necesitas.</p>
   <div id="cropStage" style="position:relative;max-width:92vw;max-height:70vh;overflow:auto;background:#000;">
@@ -537,17 +557,40 @@ $('logoutBtn').onclick = async () => {
   location.reload();
 };
 
-$('inviteBtn').onclick = async () => {
-  const rol = prompt('¿Qué rol tendrá la persona que invitas?\n\nEscribe exactamente una de estas opciones:\nadmin — puede todo, incluso invitar a otros\neditor — puede crear puntos y subir fotos\nvisor — solo puede ver', 'editor');
-  if(!rol || !['admin','editor','visor'].includes(rol.trim())) {
-    if(rol !== null) alert('Escribe exactamente: admin, editor o visor.');
-    return;
-  }
+$('inviteBtn').onclick = () => {
+  $('inviteEmail').value = '';
+  $('inviteRol').value = 'editor';
+  $('inviteResult').innerHTML = '';
+  $('inviteGenBtn').style.display = '';
+  $('inviteModal').style.display = 'flex';
+};
+$('inviteCancelBtn').onclick = () => { $('inviteModal').style.display = 'none'; };
+
+$('inviteGenBtn').onclick = async () => {
+  const email = $('inviteEmail').value.trim();
+  const rol = $('inviteRol').value;
+  $('inviteGenBtn').disabled = true;
   const { data, error } = await sb.from('invitaciones').insert({
-    empresa_id: miUsuario.empresa_id, rol: rol.trim(), creado_por: session.user.id
+    empresa_id: miUsuario.empresa_id, rol, email: email || null, creado_por: session.user.id
   }).select().single();
-  if(error){ alert('No se pudo generar la invitación: ' + error.message); return; }
-  alert('Código de invitación (' + rol.trim() + '): ' + data.codigo + '\n\nCompártelo con tu colega. Al registrarse en Bitácora, debe elegir "Tengo un código de invitación" y pegarlo ahí — así se une a tu misma empresa con ese rol.');
+  $('inviteGenBtn').disabled = false;
+  if(error){ $('inviteResult').innerHTML = '<span style="color:#C0001C">No se pudo generar: ' + error.message + '</span>'; return; }
+  $('inviteResult').innerHTML = `
+    <div style="background:#EAF6FC;padding:10px 12px;border-radius:8px;">
+      Código (<b>${rol}</b>):
+      <span style="font-family:monospace;font-size:16px;letter-spacing:2px;">${data.codigo}</span>
+      <button id="copyCodeBtn" style="margin-left:8px;padding:4px 10px;font-size:11px;text-transform:uppercase;
+        background:#1B4965;color:#fff;border:none;border-radius:6px;cursor:pointer;">Copiar</button>
+      <br>
+      <span style="font-size:11px;color:#6b665c;">Compártelo con tu colega. Al registrarse, debe elegir "Tengo un código de invitación" y pegarlo ahí.</span>
+    </div>`;
+  $('inviteGenBtn').style.display = 'none';
+  $('copyCodeBtn').onclick = () => {
+    navigator.clipboard.writeText(data.codigo).then(() => {
+      $('copyCodeBtn').textContent = '¡Copiado!';
+      setTimeout(() => { $('copyCodeBtn').textContent = 'Copiar'; }, 1500);
+    });
+  };
 };
 
 async function boot(){
