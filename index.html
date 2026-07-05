@@ -554,7 +554,9 @@ async function boot(){
   }
   miUsuario = usuarioRow;
   const { data: empresa } = await sb.from('empresas').select('*').eq('id', miUsuario.empresa_id).single();
-  $('empresaLabel').textContent = empresa.nombre + ' · ' + miUsuario.rol;
+  $('empresaLabel').textContent = miUsuario.super_admin
+    ? 'Bitácora · Super admin (todas las empresas)'
+    : empresa.nombre + ' · ' + miUsuario.rol;
   $('authScreen').style.display = 'none';
   $('appScreen').style.display = 'block';
   showProyectos();
@@ -582,12 +584,21 @@ async function showProyectos(){
   renderCrumbs();
   showView('proyectos');
   const { data, error } = await sb.from('proyectos').select('*').order('creado_en');
+  let nombresEmpresa = {};
+  if(miUsuario.super_admin && (data || []).length){
+    const idsEmpresa = [...new Set(data.map(p => p.empresa_id))];
+    const { data: empresasData } = await sb.from('empresas').select('id, nombre').in('id', idsEmpresa);
+    (empresasData || []).forEach(e => { nombresEmpresa[e.id] = e.nombre; });
+  }
   const list = $('proyectosList');
   list.innerHTML = '';
   (data || []).forEach(p => {
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = `<div class="name">${p.nombre}</div><div class="meta">${p.descripcion || ''}</div>`;
+    const etiquetaEmpresa = miUsuario.super_admin
+      ? `<div class="meta" style="color:var(--marino);font-weight:600;">${nombresEmpresa[p.empresa_id] || 'Empresa desconocida'}</div>`
+      : '';
+    card.innerHTML = `${etiquetaEmpresa}<div class="name">${p.nombre}</div><div class="meta">${p.descripcion || ''}</div>`;
     card.onclick = () => openProyecto(p);
     list.appendChild(card);
   });
