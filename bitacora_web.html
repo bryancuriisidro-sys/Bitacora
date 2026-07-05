@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bitácora</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B4965">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bitácora">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --terracota:#2C2C2A; --terracota-osc:#1A1A18; --grafito:#2C2C2C;
+    --marino:#1B4965; --marino-osc:#12313F; --acento:#1B4965; --papel:#F4F2ED; --papel-linea:#E4E0D6; --blanco:#FFFFFF;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--papel);
+    font-family:'Helvetica Neue',Arial,sans-serif;color:var(--grafito);}
+  .wrap{max-width:1300px;margin:0 auto;padding:20px 18px 60px;}
+  header{position:relative;padding-left:30px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;}
+  .railbar{position:absolute;left:0;top:2px;bottom:2px;width:5px;background:var(--terracota);}
+  .eyebrow{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--marino);
+    font-weight:700;margin:0 0 4px;font-family:Georgia,serif;}
+  h1{font-family:Georgia,serif;font-size:21px;margin:0;font-weight:400;}
+  .logout-btn{font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:none;
+    border:1px solid var(--papel-linea);color:#6b665c;padding:7px 12px;cursor:pointer;}
+  .logout-btn:hover{border-color:var(--terracota);color:var(--terracota);}
+
+  /* ---- Auth ---- */
+  html body #authScreen{
+    background-color:#FBF8F5;
+    background-image:radial-gradient(circle, rgba(44,44,42,0.14) 1.6px, transparent 1.6px),
+      repeating-linear-gradient(60deg, rgba(44,44,42,0.06) 0, rgba(44,44,42,0.06) 1px, transparent 1px, transparent 42px),
+      repeating-linear-gradient(-60deg, rgba(44,44,42,0.06) 0, rgba(44,44,42,0.06) 1px, transparent 1px, transparent 42px);
+    background-size:42px 42px, 42px 42px, 42px 42px;
+    min-height:100vh;
+  }
+  .auth-shell{max-width:820px;margin:60px auto;display:flex;background:var(--blanco);
+    border:1px solid var(--papel-linea);box-shadow:0 4px 24px rgba(0,0,0,.06);}
+  @media(max-width:760px){.auth-shell{flex-direction:column;max-width:420px;}}
+  .auth-box{flex:1;min-width:0;padding:34px 30px;}
+  .auth-box h1{margin-bottom:6px;}
+  .auth-box p{font-size:12.5px;color:#6b665c;margin:0 0 20px;}
+  .auth-box label{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:#6b665c;margin:14px 0 5px;}
+  .auth-box input{width:100%;font-family:inherit;font-size:14px;padding:9px 10px;
+    border:1px solid var(--papel-linea);}
+  .auth-box button{width:100%;margin-top:20px;font-size:12px;letter-spacing:.05em;text-transform:uppercase;
+    background:var(--marino);color:#fff;border:none;padding:11px;cursor:pointer;}
+  .auth-box button:hover{background:var(--terracota);}
+  .auth-box button:disabled{background:#c9c4b6;cursor:wait;}
+  .auth-switch{margin-top:14px;font-size:12px;text-align:center;color:#6b665c;}
+  .auth-switch a{color:var(--acento);cursor:pointer;text-decoration:underline;}
+  .auth-msg{font-size:12px;margin-top:12px;padding:8px 10px;}
+  .auth-msg.ok{background:#EAF6FC;color:#1c5f7c;}
+  .auth-msg.err{background:#FFF3F3;color:var(--terracota-osc);}
+
+  /* ---- Panel de marketing (la "burbuja" de la derecha) ---- */
+  .auth-marketing{flex:1;min-width:0;background:var(--marino);color:#fff;padding:34px 30px;
+    position:relative;overflow:hidden;background-image:
+      radial-gradient(circle, rgba(255,255,255,0.14) 1.6px, transparent 1.6px),
+      repeating-linear-gradient(60deg, rgba(255,255,255,0.06) 0, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 42px),
+      repeating-linear-gradient(-60deg, rgba(255,255,255,0.06) 0, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 42px);
+    background-size:42px 42px, 42px 42px, 42px 42px;}
+  @media(max-width:760px){.auth-marketing{display:none;}}
+  .auth-marketing .eyebrow-m{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:rgba(255,255,255,.7);font-weight:700;margin:0 0 10px;}
+  .auth-marketing h2{font-family:Georgia,serif;font-size:19px;font-weight:400;line-height:1.4;
+    margin:0 0 18px;color:#fff;}
+  .auth-marketing ul{list-style:none;margin:0 0 26px;padding:0;}
+  .auth-marketing li{font-size:12.5px;line-height:1.6;margin-bottom:12px;padding-left:20px;
+    position:relative;color:rgba(255,255,255,.9);}
+  .auth-marketing li::before{content:"✓";position:absolute;left:0;color:#fff;}
+  .auth-marketing .contact-block{border-top:1px solid rgba(255,255,255,.2);padding-top:16px;
+    font-size:12px;color:rgba(255,255,255,.75);line-height:1.7;}
+  .auth-marketing .contact-block b{color:#fff;display:block;font-size:11px;
+    letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;}
+
+  /* ---- Breadcrumb / nav ---- */
+  .crumbs{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;font-size:12.5px;color:#6b665c;}
+  .crumbs b{color:var(--grafito);cursor:pointer;}
+  .crumbs b:hover{color:var(--terracota);}
+  .crumbs span.sep{color:#c9c4b6;}
+
+  .card-list{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px;}
+  .card{background:var(--blanco);border:1px solid var(--papel-linea);padding:16px;width:220px;
+    cursor:pointer;transition:border-color .15s;}
+  .card:hover{border-color:var(--marino);}
+  .card .name{font-family:Georgia,serif;font-size:15px;margin-bottom:4px;}
+  .card .meta{font-size:11px;color:#a19c8d;}
+  .card.new{display:flex;align-items:center;justify-content:center;color:#a19c8d;
+    border-style:dashed;font-size:13px;}
+  .card.new:hover{color:var(--marino);border-color:var(--marino);}
+
+  /* ---- Plano viewer (igual que antes) ---- */
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 16px;}
+  select{font-family:inherit;font-size:13px;padding:9px 12px;border:1px solid var(--papel-linea);
+    background:var(--blanco);color:var(--grafito);min-width:200px;}
+  .hint{font-size:11.5px;color:#a19c8d;}
+  .stats{margin-left:auto;font-size:11.5px;color:#8a8577;display:flex;gap:14px;}
+  .stats b{color:var(--grafito);}
+
+  .layout{display:grid;grid-template-columns:1fr 360px;gap:2px;background:var(--papel-linea);
+    border:1px solid var(--papel-linea);}
+  @media(max-width:900px){.layout{grid-template-columns:1fr;}}
+  .plan-pane{background:var(--blanco);position:relative;overflow:auto;max-height:78vh;}
+  .plan-inner{position:relative;display:inline-block;cursor:crosshair;}
+  .plan-inner img{display:block;max-width:100%;height:auto;user-select:none;-webkit-user-drag:none;}
+  .pin{position:absolute;width:24px;height:24px;margin-left:-12px;margin-top:-12px;cursor:pointer;}
+  .pin svg{width:100%;height:100%;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));}
+  .pin .ring{stroke:#fff;stroke-width:2;}
+  .pin .glass{stroke:var(--grafito);stroke-width:1.2;}
+  .pin.has-photo .ring{fill:var(--marino);}
+  .pin.has-photo .glass{fill:#fff;fill-opacity:.55;stroke:none;}
+  .pin.empty .ring{fill:var(--blanco);}
+  .pin.empty .glass{fill:none;opacity:.5;}
+  .pin.active{transform:scale(1.25);z-index:2;}
+  .pin.active .ring{stroke:var(--marino);stroke-width:3;}
+
+  .side{background:var(--blanco);padding:16px;overflow-y:auto;max-height:78vh;}
+  .empty-state{padding:40px 10px;text-align:center;color:#a19c8d;font-size:12.5px;line-height:1.7;}
+  .empty-state b{display:block;font-family:Georgia,serif;font-size:15px;color:var(--grafito);margin-bottom:6px;}
+  .point-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:14px;}
+  .point-name{font-family:Georgia,serif;font-size:16px;}
+  .point-head-btns{display:flex;gap:6px;}
+  .del-btn{font-size:10px;letter-spacing:.05em;text-transform:uppercase;background:none;
+    border:1px solid var(--papel-linea);color:#a19c8d;padding:5px 9px;cursor:pointer;white-space:nowrap;}
+  .del-btn:hover{border-color:var(--terracota);color:var(--terracota);}
+
+  .upload-box{border:1.5px dashed var(--papel-linea);padding:14px;text-align:center;margin-bottom:16px;}
+  .upload-box label.ttl{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:#6b665c;margin-bottom:8px;}
+  .upload-row{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;}
+  input[type=date]{font-family:inherit;font-size:12px;padding:7px 8px;border:1px solid var(--papel-linea);}
+  .file-btn{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;background:var(--marino);
+    color:#fff;border:none;padding:8px 14px;cursor:pointer;}
+  .file-btn:hover{background:var(--terracota);}
+  .file-btn:disabled{background:#c9c4b6;cursor:wait;}
+  input[type=file]{display:none;}
+  .upload-status{font-size:11px;color:var(--acento);margin-top:8px;min-height:14px;}
+  .upload-status.err{color:var(--terracota);}
+  .ref-check{display:flex;align-items:center;gap:6px;font-size:11px;color:#6b665c;
+    margin-top:10px;justify-content:center;cursor:pointer;}
+  .ref-label-input{font-family:inherit;font-size:12px;padding:7px 9px;border:1px solid var(--papel-linea);
+    width:100%;margin-top:8px;box-sizing:border-box;}
+  .ref-tag{display:inline-block;font-size:9px;letter-spacing:.04em;text-transform:uppercase;
+    background:var(--acento);color:#fff;padding:2px 6px;margin-left:6px;vertical-align:middle;}
+
+  .photo-list{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+  .photo-chip{display:flex;align-items:center;gap:9px;padding:7px 9px;border:1px solid var(--papel-linea);
+    cursor:pointer;font-size:12px;}
+  .photo-chip.sel{border-color:var(--terracota);background:#FFF6F6;}
+  .photo-chip img{width:38px;height:38px;object-fit:cover;flex-shrink:0;}
+  .photo-chip .lbl{flex:1;}
+  .photo-chip .rm{font-size:15px;color:#c9c4b6;line-height:1;}
+  .photo-chip .rm:hover{color:var(--terracota);}
+  .compare-hint{font-size:11px;color:#a19c8d;margin:-8px 0 14px;}
+
+  .viewer-box{position:relative;background:#111;aspect-ratio:4/3;margin-bottom:10px;overflow:hidden;
+    border:1px solid var(--papel-linea);}
+  .viewer-box img{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;
+    background:#000;user-select:none;pointer-events:none;}
+  .img-before{clip-path:inset(0 0 0 50%);}
+  .divider{position:absolute;top:0;bottom:0;left:50%;z-index:3;}
+  .divider .line{position:absolute;top:0;bottom:0;left:-1px;width:2px;background:var(--terracota);
+    box-shadow:0 0 0 1px rgba(255,255,255,.5);}
+  .divider .handle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:30px;height:30px;border-radius:50%;background:var(--terracota);border:2px solid #fff;
+    display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:ew-resize;
+    box-shadow:0 2px 6px rgba(0,0,0,.35);}
+  .handle::before{content:"◂▸";color:#fff;font-size:9px;letter-spacing:1px;}
+  .drag-cover{position:absolute;inset:0;z-index:4;cursor:ew-resize;}
+  .tag{position:absolute;bottom:8px;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:#fff;background:rgba(0,0,0,.6);padding:3px 8px;z-index:5;}
+  .pano360{position:absolute;inset:0;}
+  .loading-box{padding:30px;text-align:center;color:#a19c8d;font-size:12px;}
+
+  .viewer-box.pano-dual{display:flex;}
+  .pano-cell{position:relative;flex:1;height:100%;}
+  .pano-cell + .pano-cell{border-left:2px solid var(--terracota);}
+  .align-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-4px 0 12px;font-size:11px;color:#6b665c;}
+  .align-row button{font-size:11px;background:var(--blanco);border:1px solid var(--papel-linea);
+    padding:5px 9px;cursor:pointer;color:var(--grafito);}
+  .sync-note{font-size:10.5px;color:#a19c8d;margin:-8px 0 12px;}
+  .viewer-box.side-by-side{display:flex;}
+  .sbs-cell{position:relative;flex:1;height:100%;}
+  .sbs-cell + .sbs-cell{border-left:2px solid var(--terracota);}
+  .viewer-box.side-by-side .sbs-cell img{position:static;width:100%;height:100%;object-fit:contain;}
+  .mixed-note{font-size:10.5px;color:#a19c8d;margin:-8px 0 12px;}
+
+  .expand-btn{position:absolute;top:8px;right:8px;z-index:6;background:rgba(0,0,0,.55);
+    color:#fff;border:none;width:26px;height:26px;cursor:pointer;font-size:13px;line-height:1;}
+  .expand-btn:hover{background:var(--terracota);}
+  .viewer-box.expanded{position:fixed;inset:16px;z-index:9999;aspect-ratio:auto;box-shadow:0 8px 40px rgba(0,0,0,.5);}
+  .expand-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9998;}
+  .expand-backdrop.show{display:block;}
+
+  footer{margin-top:26px;padding-top:14px;border-top:1px solid var(--papel-linea);
+    font-size:10.5px;color:#a19c8d;line-height:1.6;}
+</style>
+</head>
+<body>
+
+<div id="authScreen" class="wrap" style="display:none">
+  <div class="auth-shell">
+  <div class="auth-box">
+    <div class="railbar" style="left:0"></div>
+    <h1>Bitácora</h1>
+    <p id="authSubtitle">Inicia sesión para ver tus proyectos.</p>
+
+    <div id="loginForm">
+      <label>Correo</label>
+      <input type="email" id="loginEmail" autocomplete="username">
+      <label>Contraseña</label>
+      <input type="password" id="loginPassword" autocomplete="current-password">
+      <button id="loginBtn">Iniciar sesión</button>
+      <div class="auth-switch">¿No tienes cuenta? <a id="showSignup">Crear una</a></div>
+    </div>
+
+    <div id="signupForm" style="display:none">
+      <label>Correo</label>
+      <input type="email" id="signupEmail" autocomplete="username">
+      <label>Contraseña</label>
+      <input type="password" id="signupPassword" autocomplete="new-password">
+      <button id="signupBtn">Crear cuenta</button>
+      <div class="auth-switch">¿Ya tienes cuenta? <a id="showLogin">Inicia sesión</a></div>
+    </div>
+
+    <div id="setupForm" style="display:none">
+      <p>Un último paso: dale un nombre a tu empresa/organización.</p>
+      <label>Nombre de la empresa</label>
+      <input type="text" id="setupEmpresa" placeholder="Ej. Consorcio PP NEB">
+      <button id="setupBtn">Continuar</button>
+    </div>
+
+    <div id="authMsg"></div>
+  </div>
+
+  <div class="auth-marketing">
+    <p class="eyebrow-m">Seguimiento fotográfico de obra</p>
+    <h2>Compara el avance real de tu obra.</h2>
+    <ul>
+      <li>Fotos 360°</li>
+      <li>Compara el antes y el después</li>
+      <li>Comparte el avance con tu equipo o tu cliente</li>
+    </ul>
+    <div class="contact-block">
+      <b>¿Tienes un proyecto?</b>
+      Escríbenos a bryancuriisidro@gmail.com<br>
+      o por WhatsApp al +51 999 999 999
+    </div>
+  </div>
+  </div>
+</div>
+
+<div id="appScreen" class="wrap" style="display:none">
+  <header>
+    <div class="railbar"></div>
+    <div>
+      <p class="eyebrow" id="empresaLabel">Bitácora</p>
+      <h1 id="pageTitle">Proyectos</h1>
+    </div>
+    <button class="logout-btn" id="logoutBtn">Cerrar sesión</button>
+  </header>
+
+  <div class="crumbs" id="crumbs"></div>
+
+  <div id="proyectosView">
+    <div class="card-list" id="proyectosList"></div>
+  </div>
+
+  <div id="planosView" style="display:none">
+    <div class="card-list" id="planosList"></div>
+  </div>
+
+  <div id="planoDetailView" style="display:none">
+    <div class="toolbar">
+      <span class="hint">Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos</span>
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="layout">
+      <div class="plan-pane">
+        <div class="plan-inner" id="planInner">
+          <img id="planImg" src="" draggable="false">
+        </div>
+      </div>
+      <div class="side" id="side">
+        <div class="empty-state"><b>Ningún punto seleccionado</b>Haz clic en el plano para crear uno.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Bitácora — cada empresa ve únicamente sus propios proyectos, planos, puntos y fotos.</footer>
+</div>
+
+<div class="expand-backdrop" id="expandBackdrop"></div>
+
+<script>
+// ============================================================
+// CONFIGURA ESTO CON TUS DATOS DE SUPABASE
+// ============================================================
+const SUPABASE_URL = 'https://qwpxzapikcpjxpmzvcix.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_4S9lF7hPcPH6TFIp-9WLNg_qg8pItQn';
+const BUCKET = 'fotos';
+// ============================================================
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let session = null;
+let miUsuario = null;      // fila de la tabla usuarios
+let proyectoActual = null;
+let planoActual = null;
+let puntoActual = null;
+let puntos = [];
+let compareSelection = [];
+let panoViewer = null;
+
+const $ = (id) => document.getElementById(id);
+
+// ---------------- AUTH ----------------
+$('showSignup').onclick = () => { $('loginForm').style.display='none'; $('signupForm').style.display='block'; };
+$('showLogin').onclick = () => { $('signupForm').style.display='none'; $('loginForm').style.display='block'; };
+
+function authMsg(text, ok){
+  const el = $('authMsg');
+  el.className = 'auth-msg ' + (ok ? 'ok' : 'err');
+  el.textContent = text;
+}
+
+$('loginBtn').onclick = async () => {
+  $('loginBtn').disabled = true;
+  const { error } = await sb.auth.signInWithPassword({
+    email: $('loginEmail').value.trim(),
+    password: $('loginPassword').value
+  });
+  $('loginBtn').disabled = false;
+  if(error){ authMsg(error.message, false); return; }
+  boot();
+};
+
+$('signupBtn').onclick = async () => {
+  $('signupBtn').disabled = true;
+  const { data, error } = await sb.auth.signUp({
+    email: $('signupEmail').value.trim(),
+    password: $('signupPassword').value
+  });
+  $('signupBtn').disabled = false;
+  if(error){ authMsg(error.message, false); return; }
+  if(data.session){
+    boot();
+  } else {
+    authMsg('Cuenta creada. Revisa tu correo para confirmar, luego inicia sesión.', true);
+    $('signupForm').style.display = 'none';
+    $('loginForm').style.display = 'block';
+  }
+};
+
+$('setupBtn').onclick = async () => {
+  const nombre = $('setupEmpresa').value.trim();
+  if(!nombre){ authMsg('Ponle un nombre a tu empresa.', false); return; }
+  $('setupBtn').disabled = true;
+  const { data: empresa, error: e1 } = await sb.from('empresas').insert({ nombre }).select().single();
+  if(e1){ authMsg('Error creando empresa: ' + e1.message, false); $('setupBtn').disabled = false; return; }
+  const { error: e2 } = await sb.from('usuarios').insert({
+    id: session.user.id, empresa_id: empresa.id, email: session.user.email, rol: 'admin'
+  });
+  if(e2){ authMsg('Error creando usuario: ' + e2.message, false); $('setupBtn').disabled = false; return; }
+  boot();
+};
+
+$('logoutBtn').onclick = async () => {
+  await sb.auth.signOut();
+  location.reload();
+};
+
+async function boot(){
+  const { data: { session: s } } = await sb.auth.getSession();
+  session = s;
+  if(!session){
+    $('authScreen').style.display = 'block';
+    $('appScreen').style.display = 'none';
+    return;
+  }
+  const { data: usuarioRow } = await sb.from('usuarios').select('*').eq('id', session.user.id).maybeSingle();
+  if(!usuarioRow){
+    $('loginForm').style.display = 'none';
+    $('signupForm').style.display = 'none';
+    $('setupForm').style.display = 'block';
+    $('authScreen').style.display = 'block';
+    $('appScreen').style.display = 'none';
+    return;
+  }
+  miUsuario = usuarioRow;
+  const { data: empresa } = await sb.from('empresas').select('*').eq('id', miUsuario.empresa_id).single();
+  $('empresaLabel').textContent = empresa.nombre + ' · ' + miUsuario.rol;
+  $('authScreen').style.display = 'none';
+  $('appScreen').style.display = 'block';
+  showProyectos();
+}
+
+// ---------------- NAVEGACIÓN ----------------
+function renderCrumbs(){
+  const parts = [];
+  parts.push(`<b onclick="showProyectos()">Proyectos</b>`);
+  if(proyectoActual){ parts.push('<span class="sep">/</span>', `<b onclick="showPlanos()">${proyectoActual.nombre}</b>`); }
+  if(planoActual){ parts.push('<span class="sep">/</span>', `<span>${planoActual.etiqueta}</span>`); }
+  $('crumbs').innerHTML = parts.join(' ');
+}
+
+function showView(name){
+  $('proyectosView').style.display = name === 'proyectos' ? 'block' : 'none';
+  $('planosView').style.display = name === 'planos' ? 'block' : 'none';
+  $('planoDetailView').style.display = name === 'plano' ? 'block' : 'none';
+}
+
+// ---------------- PROYECTOS ----------------
+async function showProyectos(){
+  proyectoActual = null; planoActual = null;
+  $('pageTitle').textContent = 'Proyectos';
+  renderCrumbs();
+  showView('proyectos');
+  const { data, error } = await sb.from('proyectos').select('*').order('creado_en');
+  const list = $('proyectosList');
+  list.innerHTML = '';
+  (data || []).forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="name">${p.nombre}</div><div class="meta">${p.descripcion || ''}</div>`;
+    card.onclick = () => openProyecto(p);
+    list.appendChild(card);
+  });
+  const newCard = document.createElement('div');
+  newCard.className = 'card new';
+  newCard.textContent = '+ Nuevo proyecto';
+  newCard.onclick = async () => {
+    const nombre = prompt('Nombre del proyecto (ej. nombre de la obra):');
+    if(!nombre) return;
+    await sb.from('proyectos').insert({ empresa_id: miUsuario.empresa_id, nombre });
+    showProyectos();
+  };
+  list.appendChild(newCard);
+}
+window.showProyectos = showProyectos;
+
+async function openProyecto(p){
+  proyectoActual = p;
+  showPlanos();
+}
+
+// ---------------- PLANOS ----------------
+async function showPlanos(){
+  planoActual = null;
+  $('pageTitle').textContent = proyectoActual.nombre;
+  renderCrumbs();
+  showView('planos');
+  const { data } = await sb.from('planos').select('*').eq('proyecto_id', proyectoActual.id).order('orden');
+  const list = $('planosList');
+  list.innerHTML = '';
+  (data || []).forEach(pl => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="name">${pl.etiqueta}</div>`;
+    if(pl.imagen_url){
+      const img = document.createElement('img');
+      img.src = pl.imagen_url;
+      img.style.cssText = 'width:100%;height:100px;object-fit:cover;margin-top:8px;';
+      card.appendChild(img);
+    }
+    card.onclick = () => openPlano(pl);
+    list.appendChild(card);
+  });
+  const newCard = document.createElement('div');
+  newCard.className = 'card new';
+  newCard.textContent = '+ Nuevo plano';
+  newCard.onclick = () => nuevoPlano();
+  list.appendChild(newCard);
+}
+window.showPlanos = showPlanos;
+
+function nuevoPlano(){
+  const etiqueta = prompt('Nombre del plano (ej. Piso 3, Sótano 1):');
+  if(!etiqueta) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const path = `planos/${proyectoActual.id}/${Date.now()}_${file.name}`;
+    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, file);
+    if(upErr){ alert('Error subiendo la imagen: ' + upErr.message); return; }
+    const { data: pub } = sb.storage.from(BUCKET).getPublicUrl(path);
+    await sb.from('planos').insert({ proyecto_id: proyectoActual.id, etiqueta, imagen_url: pub.publicUrl });
+    showPlanos();
+  };
+  input.click();
+}
+
+async function openPlano(pl){
+  planoActual = pl;
+  $('pageTitle').textContent = pl.etiqueta;
+  renderCrumbs();
+  showView('plano');
+  $('planImg').src = pl.imagen_url;
+  puntoActual = null;
+  renderSideEmpty();
+  await cargarPuntos();
+}
+
+// ---------------- PUNTOS ----------------
+async function cargarPuntos(){
+  const { data } = await sb.from('puntos').select('*').eq('plano_id', planoActual.id);
+  puntos = data || [];
+  await renderStats();
+  renderPins();
+}
+
+async function renderStats(){
+  let conFoto = 0;
+  for(const pt of puntos){
+    const { count } = await sb.from('fotos').select('*', { count: 'exact', head: true }).eq('punto_id', pt.id);
+    if(count > 0) conFoto++;
+  }
+  $('stats').innerHTML = `<span><b>${puntos.length}</b> puntos</span><span><b>${conFoto}</b> con fotos</span>`;
+}
+
+function renderPins(){
+  document.querySelectorAll('.pin').forEach(p => p.remove());
+  puntos.forEach(pt => {
+    const el = document.createElement('div');
+    el.className = 'pin ' + (pt.id === (puntoActual && puntoActual.id) ? 'active' : (pt._tieneFoto ? 'has-photo' : 'empty'));
+    el.style.left = pt.x_pct + '%';
+    el.style.top = pt.y_pct + '%';
+    el.innerHTML = `<svg viewBox="0 0 24 24"><circle class="ring" cx="12" cy="12" r="10"/><circle class="glass" cx="12" cy="12" r="4.5"/></svg>`;
+    el.addEventListener('click', (e) => { e.stopPropagation(); seleccionarPunto(pt); });
+    $('planInner').appendChild(el);
+  });
+}
+
+$('planInner').addEventListener('click', async (e) => {
+  if(e.target.closest('.pin')) return;
+  if(miUsuario.rol === 'visor'){ alert('Tu rol es solo de visualización — no puedes crear puntos.'); return; }
+  const rect = $('planImg').getBoundingClientRect();
+  const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+  const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+  const nombre = 'Punto ' + (puntos.length + 1);
+  const { data, error } = await sb.from('puntos').insert({
+    plano_id: planoActual.id, nombre, x_pct: xPct, y_pct: yPct, creado_por: session.user.id
+  }).select().single();
+  if(error){ alert('No se pudo crear el punto: ' + error.message); return; }
+  await cargarPuntos();
+  seleccionarPunto(data);
+});
+
+async function seleccionarPunto(pt){
+  puntoActual = pt;
+  compareSelection = [];
+  renderPins();
+  $('side').innerHTML = '<div class="loading-box">Cargando fotos…</div>';
+  const { data: fotos } = await sb.from('fotos').select('*').eq('punto_id', pt.id).order('fecha');
+  pt._tieneFoto = (fotos || []).length > 0;
+  renderSide(pt, fotos || []);
+}
+
+function renderSideEmpty(){
+  $('side').innerHTML = `<div class="empty-state"><b>Ningún punto seleccionado</b>Haz clic en el plano para crear uno, o clic en un punto existente para ver sus fotos.</div>`;
+}
+
+function labelOf(f){ return f && f.es_referencia ? (f.etiqueta || 'Diseño / modelo') : (f ? f.fecha : ''); }
+
+function renderSide(pt, fotos){
+  const puedoEditar = miUsuario.rol !== 'visor';
+  $('side').innerHTML = `
+    <div class="point-head">
+      <div class="point-name" id="pointNameDisplay">${pt.nombre}</div>
+      <div class="point-head-btns">
+        ${puedoEditar ? '<button class="del-btn" id="renameBtn">Renombrar</button><button class="del-btn" id="delBtn">Eliminar punto</button>' : ''}
+      </div>
+    </div>
+    ${puedoEditar ? `
+    <div class="upload-box">
+      <label class="ttl">Subir foto de este punto</label>
+      <div class="upload-row">
+        <input type="date" id="dateInput" value="${new Date().toISOString().slice(0,10)}">
+        <button class="file-btn" id="fileBtn">Elegir foto(s)</button>
+        <input type="file" id="fileInput" accept="image/*" multiple>
+      </div>
+      <label class="ref-check"><input type="checkbox" id="refCheck"> Es una captura del modelo/diseño</label>
+      <input type="text" id="refLabelInput" class="ref-label-input" placeholder="Etiqueta, ej. Diseño IFC" style="display:none">
+      <div class="upload-status" id="uploadStatus"></div>
+    </div>` : ''}
+    <div class="photo-list" id="photoList"></div>
+    <div class="compare-hint" id="compareHint"></div>
+    <div id="viewerHost"></div>
+  `;
+
+  if(puedoEditar){
+    $('renameBtn').onclick = async () => {
+      const nuevo = prompt('Nombre del punto:', pt.nombre);
+      if(!nuevo || !nuevo.trim()) return;
+      await sb.from('puntos').update({ nombre: nuevo.trim() }).eq('id', pt.id);
+      pt.nombre = nuevo.trim();
+      $('pointNameDisplay').textContent = pt.nombre;
+      await cargarPuntos();
+    };
+    $('delBtn').onclick = async () => {
+      if(!confirm('¿Eliminar este punto y sus fotos?')) return;
+      await sb.from('puntos').delete().eq('id', pt.id);
+      puntoActual = null;
+      renderSideEmpty();
+      await cargarPuntos();
+    };
+    $('fileBtn').onclick = () => $('fileInput').click();
+    $('fileInput').onchange = (e) => handleUpload(e, pt);
+    $('refCheck').onchange = (e) => {
+      $('dateInput').style.display = e.target.checked ? 'none' : '';
+      $('refLabelInput').style.display = e.target.checked ? '' : 'none';
+    };
+  }
+
+  const photoList = $('photoList');
+  if(fotos.length === 0){
+    photoList.innerHTML = '<div style="font-size:12px;color:#a19c8d;">Aún no hay fotos para este punto.</div>';
+  } else {
+    fotos.forEach(f => {
+      const chip = document.createElement('div');
+      chip.className = 'photo-chip' + (compareSelection.includes(f.id) ? ' sel' : '');
+      chip.innerHTML = `<img src="${f.storage_url}"><span class="lbl">${labelOf(f)}${f.es_referencia ? '<span class="ref-tag">Diseño</span>' : ''}</span>${puedoEditar ? '<span class="rm" title="Eliminar">✕</span>' : ''}`;
+      if(puedoEditar){
+        chip.querySelector('.rm').onclick = async (ev) => {
+          ev.stopPropagation();
+          if(!confirm('¿Eliminar esta foto?')) return;
+          await sb.from('fotos').delete().eq('id', f.id);
+          seleccionarPunto(pt);
+        };
+      }
+      chip.addEventListener('click', () => toggleCompare(f.id, pt, fotos));
+      photoList.appendChild(chip);
+    });
+  }
+  $('compareHint').textContent = fotos.length >= 2 ? 'Selecciona 1 foto (vista simple) o 2 (comparador).' : '';
+  renderViewer(fotos);
+}
+
+function toggleCompare(id, pt, fotos){
+  const idx = compareSelection.indexOf(id);
+  if(idx >= 0) compareSelection.splice(idx, 1);
+  else { compareSelection.push(id); if(compareSelection.length > 2) compareSelection.shift(); }
+  renderSide(pt, fotos);
+}
+
+// ---------------- SUBIDA / COMPRESIÓN ----------------
+function loadImageFromFile(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function dataUrlBytes(dataUrl){ return Math.ceil((dataUrl.split(',')[1] || '').length * 0.75); }
+
+async function compressImage(file, forceFlat){
+  const img = await loadImageFromFile(file);
+  const isPano = !forceFlat && Math.abs((img.naturalWidth / img.naturalHeight) - 2) < 0.15;
+  const MAX_BYTES = (isPano ? 4.3 : 2.5) * 1024 * 1024;
+  let maxDim = isPano ? 3400 : 2000;
+  let quality = isPano ? 0.86 : 0.85;
+  for(let attempt = 0; attempt < 6; attempt++){
+    let { naturalWidth: width, naturalHeight: height } = img;
+    if(width > maxDim){ height = Math.round(height * (maxDim / width)); width = maxDim; }
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+    if(dataUrlBytes(dataUrl) <= MAX_BYTES || (maxDim < 700 && quality <= 0.4)) return dataUrl;
+    maxDim = Math.round(maxDim * 0.8);
+    quality = Math.max(0.4, quality - 0.08);
+  }
+  return null;
+}
+function dataUrlToBlob(dataUrl){
+  const [meta, b64] = dataUrl.split(',');
+  const mime = meta.match(/data:(.*?);/)[1];
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+async function handleUpload(e, pt){
+  const files = Array.from(e.target.files || []);
+  if(files.length === 0) return;
+  const isRef = $('refCheck').checked;
+  const fecha = $('dateInput').value || new Date().toISOString().slice(0,10);
+  const etiqueta = ($('refLabelInput').value || 'Diseño / modelo').trim();
+  const status = $('uploadStatus');
+  const fileBtn = $('fileBtn');
+  fileBtn.disabled = true;
+
+  let ok = 0, fail = 0;
+  for(let i = 0; i < files.length; i++){
+    status.textContent = `Comprimiendo y subiendo foto ${i+1} de ${files.length}...`;
+    try{
+      const dataUrl = await compressImage(files[i], isRef);
+      if(!dataUrl){ fail++; continue; }
+      const blob = dataUrlToBlob(dataUrl);
+      const path = `fotos/${pt.id}/${Date.now()}_${i}.jpg`;
+      const { error: upErr } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg' });
+      if(upErr){ console.error(upErr); fail++; continue; }
+      const { data: pub } = sb.storage.from(BUCKET).getPublicUrl(path);
+      const { error: insErr } = await sb.from('fotos').insert({
+        punto_id: pt.id, fecha, storage_url: pub.publicUrl,
+        es_referencia: isRef, etiqueta: isRef ? etiqueta : null, subido_por: session.user.id
+      });
+      if(insErr){ console.error(insErr); fail++; } else { ok++; }
+    }catch(err){ console.error(err); fail++; }
+  }
+  fileBtn.disabled = false;
+  status.className = fail ? 'upload-status err' : 'upload-status';
+  status.textContent = fail ? `${ok} guardada(s), ${fail} fallaron.` : `${ok} foto(s) guardada(s).`;
+  await cargarPuntos();
+  seleccionarPunto(pt);
+}
+
+// ---------------- VISOR / COMPARADOR (curtain, 360 sincronizado, lado a lado) ----------------
+function isPanoImg(img){ return Math.abs((img.naturalWidth / img.naturalHeight) - 2) < 0.15; }
+function loadImg(src){
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function attachExpand(box){
+  const btn = document.createElement('button');
+  btn.className = 'expand-btn'; btn.innerHTML = '⤢'; btn.title = 'Pantalla completa';
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const backdrop = $('expandBackdrop');
+    box.classList.toggle('expanded');
+    backdrop.classList.toggle('show', box.classList.contains('expanded'));
+    if(panoViewer){ setTimeout(() => { try{ panoViewer.resize(); }catch(err){} }, 60); }
+  };
+  box.appendChild(btn);
+}
+$('expandBackdrop').onclick = () => {
+  document.querySelectorAll('.viewer-box.expanded').forEach(b => b.classList.remove('expanded'));
+  $('expandBackdrop').classList.remove('show');
+  if(panoViewer){ setTimeout(() => { try{ panoViewer.resize(); }catch(err){} }, 60); }
+};
+
+function renderCurtainCompare(host, a, b){
+  const box = document.createElement('div');
+  box.className = 'viewer-box';
+  box.innerHTML = `
+    <img class="img-after" src="${b.storage_url}">
+    <img class="img-before" src="${a.storage_url}">
+    <span class="tag" style="left:8px">${labelOf(a)}</span>
+    <span class="tag" style="right:8px">${labelOf(b)}</span>
+    <div class="divider" id="divider"><div class="line"></div><div class="handle"></div></div>
+    <div class="drag-cover" id="dragCover"></div>
+  `;
+  host.appendChild(box);
+  attachExpand(box);
+  const before = box.querySelector('.img-before');
+  const divider = box.querySelector('.divider');
+  const cover = box.querySelector('.drag-cover');
+  let dragging = false;
+  function setPct(pct){ pct=Math.max(0,Math.min(100,pct)); before.style.clipPath=`inset(0 0 0 ${pct}%)`; divider.style.left=pct+'%'; }
+  function fromX(x){ const r = box.getBoundingClientRect(); return ((x - r.left) / r.width) * 100; }
+  cover.onmousedown = e => { dragging = true; setPct(fromX(e.clientX)); };
+  window.addEventListener('mousemove', e => { if(dragging) setPct(fromX(e.clientX)); });
+  window.addEventListener('mouseup', () => dragging = false);
+  cover.addEventListener('touchstart', e => { dragging = true; setPct(fromX(e.touches[0].clientX)); }, {passive:true});
+  window.addEventListener('touchmove', e => { if(dragging) setPct(fromX(e.touches[0].clientX)); }, {passive:true});
+  window.addEventListener('touchend', () => dragging = false);
+  setPct(50);
+}
+
+function renderPanoDualCompare(host, a, b){
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="viewer-box pano-dual" id="dualBox">
+      <div class="pano-cell" id="cellL"><div class="pano360" id="panoL"></div><span class="tag" style="left:8px">${labelOf(a)}</span></div>
+      <div class="pano-cell" id="cellR"><div class="pano360" id="panoR"></div><span class="tag" style="right:8px">${labelOf(b)}</span></div>
+    </div>
+    <div class="sync-note">Arrastra dentro de cualquiera para girar — la otra te sigue.</div>
+    <div class="align-row">
+      <span>Alinear:</span><button data-d="-15">«</button><button data-d="-5">‹</button>
+      <span id="offsetLabel">0°</span><button data-d="5">›</button><button data-d="15">»</button>
+      <button id="flip180Btn">Girar 180°</button><button id="resetOffsetBtn">Reiniciar</button>
+    </div>`;
+  host.appendChild(wrap);
+  const box = wrap.querySelector('#dualBox');
+  attachExpand(box);
+  const viewerL = pannellum.viewer('panoL', { type:'equirectangular', panorama:a.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
+  const viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
+  panoViewer = viewerL;
+  let offsetDeg = 0, master = null, syncing = true;
+  wrap.querySelector('#cellL').onpointerdown = () => master = viewerL;
+  wrap.querySelector('#cellR').onpointerdown = () => master = viewerR;
+  function norm(d){ d=d%360; if(d>180)d-=360; if(d<-180)d+=360; return d; }
+  function upd(){ wrap.querySelector('#offsetLabel').textContent = Math.round(offsetDeg)+'°'; }
+  function loop(){
+    if(!syncing) return;
+    if(master){
+      try{
+        if(master===viewerL){ viewerR.setYaw(norm(viewerL.getYaw()+offsetDeg),false); viewerR.setPitch(viewerL.getPitch(),false); viewerR.setHfov(viewerL.getHfov(),false); }
+        else { viewerL.setYaw(norm(viewerR.getYaw()-offsetDeg),false); viewerL.setPitch(viewerR.getPitch(),false); viewerL.setHfov(viewerR.getHfov(),false); }
+      }catch(e){}
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  wrap.querySelectorAll('.align-row button[data-d]').forEach(btn => btn.onclick = () => { offsetDeg = norm(offsetDeg + parseInt(btn.dataset.d,10)); upd(); });
+  wrap.querySelector('#flip180Btn').onclick = () => { offsetDeg = norm(offsetDeg + 180); upd(); };
+  wrap.querySelector('#resetOffsetBtn').onclick = () => { offsetDeg = 0; upd(); };
+  document.addEventListener('__stopPanoSync', () => { syncing = false; }, { once:true });
+}
+
+function renderSideBySide(host, a, b){
+  const box = document.createElement('div');
+  box.className = 'viewer-box side-by-side';
+  box.innerHTML = `
+    <div class="sbs-cell"><img src="${a.storage_url}"><span class="tag" style="left:8px">${labelOf(a)}</span></div>
+    <div class="sbs-cell"><img src="${b.storage_url}"><span class="tag" style="left:8px">${labelOf(b)}</span></div>`;
+  host.appendChild(box);
+  attachExpand(box);
+  const note = document.createElement('div');
+  note.className = 'mixed-note';
+  note.textContent = 'Una es 360° y la otra no — se muestran lado a lado.';
+  host.insertBefore(note, box);
+}
+
+function renderViewer(fotos){
+  const host = $('viewerHost');
+  if(panoViewer){ try{ panoViewer.destroy(); }catch(e){} panoViewer = null; }
+  document.dispatchEvent(new Event('__stopPanoSync'));
+  host.innerHTML = '';
+  const byId = Object.fromEntries(fotos.map(f => [f.id, f]));
+
+  if(compareSelection.length === 2){
+    const a = byId[compareSelection[0]], b = byId[compareSelection[1]];
+    host.innerHTML = '<div class="loading-box">Cargando comparador…</div>';
+    Promise.all([loadImg(a.storage_url), loadImg(b.storage_url)]).then(([imgA, imgB]) => {
+      host.innerHTML = '';
+      const panoA = imgA && !a.es_referencia && isPanoImg(imgA);
+      const panoB = imgB && !b.es_referencia && isPanoImg(imgB);
+      if(panoA && panoB) renderPanoDualCompare(host, a, b);
+      else if(panoA !== panoB) renderSideBySide(host, a, b);
+      else renderCurtainCompare(host, a, b);
+    });
+  } else if(compareSelection.length === 1){
+    const data = byId[compareSelection[0]];
+    const img = new Image();
+    img.onload = () => {
+      const isPano = !data.es_referencia && Math.abs((img.naturalWidth/img.naturalHeight)-2) < 0.15;
+      const box = document.createElement('div');
+      box.className = 'viewer-box';
+      host.appendChild(box);
+      attachExpand(box);
+      if(isPano){
+        const panoDiv = document.createElement('div'); panoDiv.className = 'pano360'; panoDiv.id = 'panoSolo';
+        box.appendChild(panoDiv);
+        panoViewer = pannellum.viewer('panoSolo', { type:'equirectangular', panorama:data.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
+        const tag = document.createElement('span'); tag.className='tag'; tag.style.left='8px';
+        tag.textContent = labelOf(data) + ' · 360°'; box.appendChild(tag);
+      } else {
+        box.innerHTML = `<img src="${data.storage_url}" style="object-fit:contain;"><span class="tag" style="left:8px">${labelOf(data)}</span>`;
+      }
+    };
+    img.src = data.storage_url;
+  }
+}
+
+boot();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch((err) => {
+      console.warn('No se pudo registrar el service worker (normal si abres el archivo local con doble clic):', err);
+    });
+  });
+}
+</script>
+</body>
+</html>
