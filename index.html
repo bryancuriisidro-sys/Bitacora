@@ -234,7 +234,7 @@
     <div id="setupForm" style="display:none">
       <p>Un último paso: dale un nombre a tu empresa/organización.</p>
       <label>Nombre de la empresa</label>
-      <input type="text" id="setupEmpresa" placeholder="Ej. Consorcio PP NEB">
+      <input type="text" id="setupEmpresa" placeholder="Ej. Constructora Los Andes">
       <button id="setupBtn">Continuar</button>
     </div>
 
@@ -364,7 +364,7 @@ $('setupBtn').onclick = async () => {
   const nombre = $('setupEmpresa').value.trim();
   if(!nombre){ authMsg('Ponle un nombre a tu empresa.', false); return; }
   $('setupBtn').disabled = true;
-  const { data: empresa, error: e1 } = await sb.from('empresas').insert({ nombre }).select().single();
+  const { data: empresa, error: e1 } = await sb.from('empresas').insert({ nombre, creado_por: session.user.id }).select().single();
   if(e1){ authMsg('Error creando empresa: ' + e1.message, false); $('setupBtn').disabled = false; return; }
   const { error: e2 } = await sb.from('usuarios').insert({
     id: session.user.id, empresa_id: empresa.id, email: session.user.email, rol: 'admin'
