@@ -234,7 +234,7 @@
     <div id="setupForm" style="display:none">
       <p>Un último paso: dale un nombre a tu empresa/organización.</p>
       <label>Nombre de la empresa</label>
-      <input type="text" id="setupEmpresa" placeholder="Ej. Constructora Los Andes">
+      <input type="text" id="setupEmpresa" placeholder="Ej. Constructora Los Andes SAC">
       <button id="setupBtn">Continuar</button>
     </div>
 
@@ -252,7 +252,7 @@
     <div class="contact-block">
       <b>¿Tienes un proyecto?</b>
       Escríbenos a bryancuriisidro@gmail.com<br>
-      o por WhatsApp al +51 979 763 813
+      o por WhatsApp al +51 999 999 999
     </div>
   </div>
   </div>
@@ -332,25 +332,36 @@ function authMsg(text, ok){
   el.textContent = text;
 }
 
+function traducirErrorAuth(msg){
+  const mapa = {
+    'Anonymous sign-ins are disabled': 'Escribe tu correo y contraseña.',
+    'Invalid login credentials': 'Correo o contraseña incorrectos.',
+    'User already registered': 'Ya existe una cuenta con ese correo.',
+    'Email not confirmed': 'Confirma tu correo antes de iniciar sesión (revisa tu bandeja de entrada).',
+    'Password should be at least 6 characters': 'La contraseña debe tener al menos 6 caracteres.'
+  };
+  return mapa[msg] || msg;
+}
+
 $('loginBtn').onclick = async () => {
+  const email = $('loginEmail').value.trim();
+  const password = $('loginPassword').value;
+  if(!email || !password){ authMsg('Escribe tu correo y contraseña.', false); return; }
   $('loginBtn').disabled = true;
-  const { error } = await sb.auth.signInWithPassword({
-    email: $('loginEmail').value.trim(),
-    password: $('loginPassword').value
-  });
+  const { error } = await sb.auth.signInWithPassword({ email, password });
   $('loginBtn').disabled = false;
-  if(error){ authMsg(error.message, false); return; }
+  if(error){ authMsg(traducirErrorAuth(error.message), false); return; }
   boot();
 };
 
 $('signupBtn').onclick = async () => {
+  const email = $('signupEmail').value.trim();
+  const password = $('signupPassword').value;
+  if(!email || !password){ authMsg('Escribe tu correo y contraseña.', false); return; }
   $('signupBtn').disabled = true;
-  const { data, error } = await sb.auth.signUp({
-    email: $('signupEmail').value.trim(),
-    password: $('signupPassword').value
-  });
+  const { data, error } = await sb.auth.signUp({ email, password });
   $('signupBtn').disabled = false;
-  if(error){ authMsg(error.message, false); return; }
+  if(error){ authMsg(traducirErrorAuth(error.message), false); return; }
   if(data.session){
     boot();
   } else {
