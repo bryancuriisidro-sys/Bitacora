@@ -239,10 +239,11 @@
     </div>
 
     <div id="setupForm" style="display:none">
-      <p>Un último paso: dale un nombre a tu empresa/organización.</p>
-      <label>Nombre de la empresa</label>
-      <input type="text" id="setupEmpresa" placeholder="Ej. Constructora Los Andes SAC">
-      <button id="setupBtn">Continuar</button>
+      <p>Para usar Bitácora necesitas un código de invitación de tu administrador.</p>
+      <label>Código de invitación</label>
+      <input type="text" id="joinCodigo" placeholder="Ej. AB12CD" style="text-transform:uppercase">
+      <button id="joinBtn">Unirme</button>
+      <div class="auth-switch">¿No tienes código? Escríbenos a bryancuriisidro@gmail.com</div>
     </div>
 
     <div id="authMsg"></div>
@@ -272,7 +273,10 @@
       <p class="eyebrow" id="empresaLabel">Bitácora</p>
       <h1 id="pageTitle">Proyectos</h1>
     </div>
-    <button class="logout-btn" id="logoutBtn">Cerrar sesión</button>
+    <div style="display:flex;gap:8px;">
+      <button class="logout-btn" id="inviteBtn" style="display:none">Invitar colega</button>
+      <button class="logout-btn" id="logoutBtn">Cerrar sesión</button>
+    </div>
   </header>
 
   <div class="crumbs" id="crumbs"></div>
@@ -517,22 +521,33 @@ $('signupBtn').onclick = async () => {
   }
 };
 
-$('setupBtn').onclick = async () => {
-  const nombre = $('setupEmpresa').value.trim();
-  if(!nombre){ authMsg('Ponle un nombre a tu empresa.', false); return; }
-  $('setupBtn').disabled = true;
-  const { data: empresa, error: e1 } = await sb.from('empresas').insert({ nombre, creado_por: session.user.id }).select().single();
-  if(e1){ authMsg('Error creando empresa: ' + e1.message, false); $('setupBtn').disabled = false; return; }
-  const { error: e2 } = await sb.from('usuarios').insert({
-    id: session.user.id, empresa_id: empresa.id, email: session.user.email, rol: 'admin'
-  });
-  if(e2){ authMsg('Error creando usuario: ' + e2.message, false); $('setupBtn').disabled = false; return; }
+$('joinBtn').onclick = async () => {
+  const codigo = $('joinCodigo').value.trim();
+  if(!codigo){ authMsg('Escribe el código de invitación.', false); return; }
+  $('joinBtn').disabled = true;
+  const { data, error } = await sb.rpc('usar_invitacion', { p_codigo: codigo });
+  $('joinBtn').disabled = false;
+  if(error){ authMsg('Error: ' + error.message, false); return; }
+  if(!data.ok){ authMsg(data.error, false); return; }
   boot();
 };
 
 $('logoutBtn').onclick = async () => {
   await sb.auth.signOut();
   location.reload();
+};
+
+$('inviteBtn').onclick = async () => {
+  const rol = prompt('¿Qué rol tendrá la persona que invitas?\n\nEscribe exactamente una de estas opciones:\nadmin — puede todo, incluso invitar a otros\neditor — puede crear puntos y subir fotos\nvisor — solo puede ver', 'editor');
+  if(!rol || !['admin','editor','visor'].includes(rol.trim())) {
+    if(rol !== null) alert('Escribe exactamente: admin, editor o visor.');
+    return;
+  }
+  const { data, error } = await sb.from('invitaciones').insert({
+    empresa_id: miUsuario.empresa_id, rol: rol.trim(), creado_por: session.user.id
+  }).select().single();
+  if(error){ alert('No se pudo generar la invitación: ' + error.message); return; }
+  alert('Código de invitación (' + rol.trim() + '): ' + data.codigo + '\n\nCompártelo con tu colega. Al registrarse en Bitácora, debe elegir "Tengo un código de invitación" y pegarlo ahí — así se une a tu misma empresa con ese rol.');
 };
 
 async function boot(){
@@ -557,6 +572,7 @@ async function boot(){
   $('empresaLabel').textContent = miUsuario.super_admin
     ? 'Bitácora · Super admin (todas las empresas)'
     : empresa.nombre + ' · ' + miUsuario.rol;
+  $('inviteBtn').style.display = (miUsuario.rol === 'admin') ? '' : 'none';
   $('authScreen').style.display = 'none';
   $('appScreen').style.display = 'block';
   showProyectos();
