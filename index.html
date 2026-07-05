@@ -339,7 +339,7 @@
     <select id="inviteRol" style="width:100%;padding:9px 10px;border:1px solid #E4E0D6;border-radius:8px;margin-bottom:16px;">
       <option value="editor">Editor — crea puntos y sube fotos</option>
       <option value="visor">Visor — solo puede ver</option>
-      <option value="admin">Admin — puede todo, incluso invitar</option>
+      <option value="admin" id="optAdmin">Admin — puede todo, incluso invitar</option>
     </select>
     <div id="inviteResult" style="font-size:13px;margin-bottom:14px;"></div>
     <div style="display:flex;gap:8px;">
@@ -586,6 +586,7 @@ document.querySelectorAll('#layoutToggle button').forEach(btn => {
 $('inviteBtn').onclick = () => {
   $('inviteEmail').value = '';
   $('inviteRol').value = 'editor';
+  $('optAdmin').style.display = miUsuario.super_admin ? '' : 'none';
   $('inviteResult').innerHTML = '';
   $('inviteGenBtn').style.display = '';
   $('inviteModal').style.display = 'flex';
