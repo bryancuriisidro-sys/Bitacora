@@ -644,6 +644,9 @@ async function boot(){
     return;
   }
   miUsuario = usuarioRow;
+  sb.from('accesos').insert({
+    usuario_id: session.user.id, empresa_id: miUsuario.empresa_id, email: session.user.email
+  }).then(() => {}).catch(() => {});
   const { data: empresa } = await sb.from('empresas').select('*').eq('id', miUsuario.empresa_id).single();
   $('empresaLabel').textContent = miUsuario.super_admin
     ? 'Bitácora · Super admin (todas las empresas)'
