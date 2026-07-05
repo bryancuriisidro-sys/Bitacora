@@ -113,8 +113,15 @@
   .stats b{color:var(--grafito);}
 
   .layout{display:grid;grid-template-columns:1fr 360px;gap:2px;background:var(--papel-linea);
-    border:1px solid var(--papel-linea);}
-  @media(max-width:900px){.layout{grid-template-columns:1fr;}}
+    border:1px solid var(--papel-linea);transition:grid-template-columns .2s ease;}
+  .layout.mode-plan{grid-template-columns:1fr 360px;}
+  .layout.mode-balanced{grid-template-columns:1fr 1fr;}
+  .layout.mode-viewer{grid-template-columns:320px 1fr;}
+  @media(max-width:900px){.layout,.layout.mode-plan,.layout.mode-balanced,.layout.mode-viewer{grid-template-columns:1fr;}}
+  .layout-toggle{display:flex;border:1px solid var(--papel-linea);border-radius:8px;overflow:hidden;}
+  .layout-toggle button{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;
+    padding:8px 12px;background:var(--blanco);border:none;cursor:pointer;color:#8a8577;}
+  .layout-toggle button.active-mode{background:var(--marino);color:#fff;}
   .plan-pane{background:var(--blanco);position:relative;overflow:auto;max-height:78vh;}
   .plan-inner{position:relative;display:inline-block;cursor:crosshair;}
   .plan-inner img{display:block;max-width:100%;height:auto;user-select:none;-webkit-user-drag:none;}
@@ -122,9 +129,8 @@
   .pin svg{width:100%;height:100%;filter:drop-shadow(0 1px 4px rgba(0,0,0,.6));}
   .pin .ring{stroke:#fff;stroke-width:2.2;}
   .pin .glass{stroke:#fff;stroke-width:1.2;}
-  .pin.has-photo .ring{fill:var(--marino);}
+  .pin .ring{fill:var(--marino);}
   .pin.has-photo .glass{fill:#fff;fill-opacity:.6;stroke:none;}
-  .pin.empty .ring{fill:#8F897C;}
   .pin.empty .glass{fill:none;opacity:.85;}
   .pin.active{transform:scale(1.3);z-index:2;}
   .pin.active .ring{stroke:var(--marino);stroke-width:3.5;}
@@ -281,6 +287,10 @@
 
   <div class="crumbs" id="crumbs"></div>
 
+  <div id="empresasView" style="display:none">
+    <div class="card-list" id="empresasList"></div>
+  </div>
+
   <div id="proyectosView">
     <div class="card-list" id="proyectosList"></div>
   </div>
@@ -291,11 +301,18 @@
 
   <div id="planoDetailView" style="display:none">
     <div class="toolbar">
-      <span class="hint">Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos</span>
+      <span class="hint" id="planHint">Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos</span>
       <button class="del-btn" id="replacePlanoBtn">Reemplazar plano</button>
       <div class="stats" id="stats"></div>
     </div>
-    <div class="layout">
+    <div class="toolbar" style="margin-top:-4px;">
+      <div class="layout-toggle" id="layoutToggle">
+        <button data-mode="mode-plan" class="active-mode">Plano grande</button>
+        <button data-mode="mode-balanced">Parejo</button>
+        <button data-mode="mode-viewer">Fotos grandes</button>
+      </div>
+    </div>
+    <div class="layout mode-plan" id="layoutBox">
       <div class="plan-pane">
         <div class="plan-inner" id="planInner">
           <img id="planImg" src="" draggable="false">
@@ -482,6 +499,7 @@ async function archivoAImagen(file){
 
 let session = null;
 let miUsuario = null;      // fila de la tabla usuarios
+let empresaContexto = null;
 let proyectoActual = null;
 let planoActual = null;
 let puntoActual = null;
@@ -557,6 +575,14 @@ $('logoutBtn').onclick = async () => {
   location.reload();
 };
 
+document.querySelectorAll('#layoutToggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#layoutToggle button').forEach(b => b.classList.remove('active-mode'));
+    btn.classList.add('active-mode');
+    $('layoutBox').className = 'layout ' + btn.dataset.mode;
+  });
+});
+
 $('inviteBtn').onclick = () => {
   $('inviteEmail').value = '';
   $('inviteRol').value = 'editor';
@@ -571,7 +597,7 @@ $('inviteGenBtn').onclick = async () => {
   const rol = $('inviteRol').value;
   $('inviteGenBtn').disabled = true;
   const { data, error } = await sb.from('invitaciones').insert({
-    empresa_id: miUsuario.empresa_id, rol, email: email || null, creado_por: session.user.id
+    empresa_id: (empresaContexto ? empresaContexto.id : miUsuario.empresa_id), rol, email: email || null, creado_por: session.user.id
   }).select().single();
   $('inviteGenBtn').disabled = false;
   if(error){ $('inviteResult').innerHTML = '<span style="color:#C0001C">No se pudo generar: ' + error.message + '</span>'; return; }
@@ -615,49 +641,84 @@ async function boot(){
   $('empresaLabel').textContent = miUsuario.super_admin
     ? 'Bitácora · Super admin (todas las empresas)'
     : empresa.nombre + ' · ' + miUsuario.rol;
-  $('inviteBtn').style.display = (miUsuario.rol === 'admin') ? '' : 'none';
   $('authScreen').style.display = 'none';
   $('appScreen').style.display = 'block';
-  showProyectos();
+  if(miUsuario.super_admin){
+    $('inviteBtn').style.display = 'none';
+    showEmpresas();
+  } else {
+    $('inviteBtn').style.display = (miUsuario.rol === 'admin') ? '' : 'none';
+    showProyectos();
+  }
 }
 
 // ---------------- NAVEGACIÓN ----------------
 function renderCrumbs(){
   const parts = [];
-  parts.push(`<b onclick="showProyectos()">Proyectos</b>`);
+  if(miUsuario.super_admin){
+    parts.push(`<b onclick="showEmpresas()">Empresas</b>`);
+    if(empresaContexto){ parts.push('<span class="sep">/</span>', `<b onclick="showProyectos()">${empresaContexto.nombre}</b>`); }
+  } else {
+    parts.push(`<b onclick="showProyectos()">Proyectos</b>`);
+  }
   if(proyectoActual){ parts.push('<span class="sep">/</span>', `<b onclick="showPlanos()">${proyectoActual.nombre}</b>`); }
   if(planoActual){ parts.push('<span class="sep">/</span>', `<span>${planoActual.etiqueta}</span>`); }
   $('crumbs').innerHTML = parts.join(' ');
 }
 
 function showView(name){
+  $('empresasView').style.display = name === 'empresas' ? 'block' : 'none';
   $('proyectosView').style.display = name === 'proyectos' ? 'block' : 'none';
   $('planosView').style.display = name === 'planos' ? 'block' : 'none';
   $('planoDetailView').style.display = name === 'plano' ? 'block' : 'none';
 }
 
 // ---------------- PROYECTOS ----------------
+async function showEmpresas(){
+  empresaContexto = null; proyectoActual = null; planoActual = null;
+  $('pageTitle').textContent = 'Empresas';
+  renderCrumbs();
+  showView('empresas');
+  const { data } = await sb.from('empresas').select('*').order('creado_en');
+  const list = $('empresasList');
+  list.innerHTML = '';
+  (data || []).forEach(emp => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="name">${emp.nombre}</div>`;
+    card.onclick = () => { empresaContexto = emp; showProyectos(); };
+    list.appendChild(card);
+  });
+  const newCard = document.createElement('div');
+  newCard.className = 'card new';
+  newCard.textContent = '+ Nueva empresa';
+  newCard.onclick = async () => {
+    const nombre = prompt('Nombre de la empresa/cliente nuevo:');
+    if(!nombre) return;
+    const { error } = await sb.from('empresas').insert({ nombre, creado_por: session.user.id });
+    if(error){ alert('No se pudo crear: ' + error.message); return; }
+    showEmpresas();
+  };
+  list.appendChild(newCard);
+}
+window.showEmpresas = showEmpresas;
+
 async function showProyectos(){
   proyectoActual = null; planoActual = null;
-  $('pageTitle').textContent = 'Proyectos';
+  const idEmpresaActiva = miUsuario.super_admin ? (empresaContexto ? empresaContexto.id : null) : miUsuario.empresa_id;
+  $('inviteBtn').style.display = (miUsuario.super_admin ? !!empresaContexto : miUsuario.rol === 'admin') ? '' : 'none';
+  $('pageTitle').textContent = empresaContexto ? empresaContexto.nombre : 'Proyectos';
   renderCrumbs();
   showView('proyectos');
-  const { data, error } = await sb.from('proyectos').select('*').order('creado_en');
-  let nombresEmpresa = {};
-  if(miUsuario.super_admin && (data || []).length){
-    const idsEmpresa = [...new Set(data.map(p => p.empresa_id))];
-    const { data: empresasData } = await sb.from('empresas').select('id, nombre').in('id', idsEmpresa);
-    (empresasData || []).forEach(e => { nombresEmpresa[e.id] = e.nombre; });
-  }
+  let query = sb.from('proyectos').select('*').order('creado_en');
+  if(idEmpresaActiva) query = query.eq('empresa_id', idEmpresaActiva);
+  const { data, error } = await query;
   const list = $('proyectosList');
   list.innerHTML = '';
   (data || []).forEach(p => {
     const card = document.createElement('div');
     card.className = 'card';
-    const etiquetaEmpresa = miUsuario.super_admin
-      ? `<div class="meta" style="color:var(--marino);font-weight:600;">${nombresEmpresa[p.empresa_id] || 'Empresa desconocida'}</div>`
-      : '';
-    card.innerHTML = `${etiquetaEmpresa}<div class="name">${p.nombre}</div><div class="meta">${p.descripcion || ''}</div>`;
+    card.innerHTML = `<div class="name">${p.nombre}</div><div class="meta">${p.descripcion || ''}</div>`;
     card.onclick = () => openProyecto(p);
     list.appendChild(card);
   });
@@ -667,7 +728,7 @@ async function showProyectos(){
   newCard.onclick = async () => {
     const nombre = prompt('Nombre del proyecto (ej. nombre de la obra):');
     if(!nombre) return;
-    await sb.from('proyectos').insert({ empresa_id: miUsuario.empresa_id, nombre });
+    await sb.from('proyectos').insert({ empresa_id: idEmpresaActiva || miUsuario.empresa_id, nombre });
     showProyectos();
   };
   list.appendChild(newCard);
@@ -678,6 +739,7 @@ async function openProyecto(p){
   proyectoActual = p;
   showPlanos();
 }
+
 
 // ---------------- PLANOS ----------------
 async function showPlanos(){
@@ -741,6 +803,15 @@ async function openPlano(pl){
   $('planImg').src = pl.imagen_url;
   puntoActual = null;
   renderSideEmpty();
+  if(miUsuario.rol === 'visor'){
+    $('planInner').style.cursor = 'default';
+    $('planHint').textContent = 'Clic en un punto para ver sus fotos';
+    $('replacePlanoBtn').style.display = 'none';
+  } else {
+    $('planInner').style.cursor = 'crosshair';
+    $('planHint').textContent = 'Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos';
+    $('replacePlanoBtn').style.display = '';
+  }
   await cargarPuntos();
 }
 
@@ -802,7 +873,7 @@ function renderPins(){
 
 $('planInner').addEventListener('click', async (e) => {
   if(e.target.closest('.pin')) return;
-  if(miUsuario.rol === 'visor'){ alert('Tu rol es solo de visualización — no puedes crear puntos.'); return; }
+  if(miUsuario.rol === 'visor') return;
   const rect = $('planImg').getBoundingClientRect();
   const xPct = ((e.clientX - rect.left) / rect.width) * 100;
   const yPct = ((e.clientY - rect.top) / rect.height) * 100;
