@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
 <style>
   :root{
     --terracota:#2C2C2A; --terracota-osc:#1A1A18; --grafito:#2C2C2C;
@@ -281,6 +282,7 @@
   <div id="planoDetailView" style="display:none">
     <div class="toolbar">
       <span class="hint">Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos</span>
+      <button class="del-btn" id="replacePlanoBtn">Reemplazar plano</button>
       <div class="stats" id="stats"></div>
     </div>
     <div class="layout">
@@ -300,6 +302,23 @@
 
 <div class="expand-backdrop" id="expandBackdrop"></div>
 
+<div id="cropModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+  <p style="color:#fff;font-size:13px;margin:0 0 12px;">Arrastra las esquinas para encuadrar solo la parte del plano que necesitas.</p>
+  <div id="cropStage" style="position:relative;max-width:92vw;max-height:70vh;overflow:auto;background:#000;">
+    <canvas id="cropCanvasSrc" style="display:block;max-width:100%;height:auto;"></canvas>
+    <div id="cropRect" style="position:absolute;border:2px solid #1B4965;background:rgba(27,73,101,.15);cursor:move;">
+      <div class="crop-handle" data-corner="nw" style="position:absolute;left:-7px;top:-7px;width:16px;height:16px;background:#1B4965;border:2px solid #fff;cursor:nwse-resize;"></div>
+      <div class="crop-handle" data-corner="ne" style="position:absolute;right:-7px;top:-7px;width:16px;height:16px;background:#1B4965;border:2px solid #fff;cursor:nesw-resize;"></div>
+      <div class="crop-handle" data-corner="sw" style="position:absolute;left:-7px;bottom:-7px;width:16px;height:16px;background:#1B4965;border:2px solid #fff;cursor:nesw-resize;"></div>
+      <div class="crop-handle" data-corner="se" style="position:absolute;right:-7px;bottom:-7px;width:16px;height:16px;background:#1B4965;border:2px solid #fff;cursor:nwse-resize;"></div>
+    </div>
+  </div>
+  <div style="margin-top:16px;display:flex;gap:10px;">
+    <button id="cropCancelBtn" style="padding:10px 20px;background:#fff;border:none;cursor:pointer;font-size:12px;text-transform:uppercase;letter-spacing:.05em;">Cancelar</button>
+    <button id="cropConfirmBtn" style="padding:10px 20px;background:#1B4965;color:#fff;border:none;cursor:pointer;font-size:12px;text-transform:uppercase;letter-spacing:.05em;">Usar este recorte</button>
+  </div>
+</div>
+
 <script>
 // ============================================================
 // CONFIGURA ESTO CON TUS DATOS DE SUPABASE
@@ -310,6 +329,126 @@ const BUCKET = 'fotos';
 // ============================================================
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+function esPDF(file){
+  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+}
+
+async function pdfACanvas(file, scale){
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: scale || 2.5 });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+  return canvas;
+}
+
+function mostrarRecortador(sourceCanvas){
+  return new Promise((resolve) => {
+    const modal = $('cropModal');
+    const dstCanvas = $('cropCanvasSrc');
+    const rectEl = $('cropRect');
+    dstCanvas.width = sourceCanvas.width;
+    dstCanvas.height = sourceCanvas.height;
+    dstCanvas.getContext('2d').drawImage(sourceCanvas, 0, 0);
+    modal.style.display = 'flex';
+
+    requestAnimationFrame(() => {
+      const displayRect = dstCanvas.getBoundingClientRect();
+      const stageRect = $('cropStage').getBoundingClientRect();
+      const offX = displayRect.left - stageRect.left + $('cropStage').scrollLeft;
+      const offY = displayRect.top - stageRect.top + $('cropStage').scrollTop;
+      let x = displayRect.width * 0.1, y = displayRect.height * 0.1;
+      let w = displayRect.width * 0.8, h = displayRect.height * 0.8;
+
+      function applyRect(){
+        rectEl.style.left = (offX + x) + 'px';
+        rectEl.style.top = (offY + y) + 'px';
+        rectEl.style.width = w + 'px';
+        rectEl.style.height = h + 'px';
+      }
+      applyRect();
+
+      let dragging = null, startX, startY, startRect;
+      function pos(e){ return e.touches ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : { x: e.clientX, y: e.clientY }; }
+      function onDown(corner){
+        return (e) => {
+          e.preventDefault(); e.stopPropagation();
+          dragging = corner;
+          const p = pos(e);
+          startX = p.x; startY = p.y;
+          startRect = { x, y, w, h };
+        };
+      }
+      const handles = rectEl.querySelectorAll('.crop-handle');
+      handles.forEach(hd => {
+        hd.addEventListener('mousedown', onDown(hd.dataset.corner));
+        hd.addEventListener('touchstart', onDown(hd.dataset.corner), { passive: false });
+      });
+      const onRectDown = (e) => { if(!e.target.classList.contains('crop-handle')) onDown('move')(e); };
+      rectEl.addEventListener('mousedown', onRectDown);
+      rectEl.addEventListener('touchstart', onRectDown, { passive: false });
+
+      function onMove(e){
+        if(!dragging) return;
+        const p = pos(e);
+        const dx = p.x - startX, dy = p.y - startY;
+        if(dragging === 'move'){
+          x = Math.max(0, Math.min(displayRect.width - w, startRect.x + dx));
+          y = Math.max(0, Math.min(displayRect.height - h, startRect.y + dy));
+        } else {
+          let nx = startRect.x, ny = startRect.y, nw = startRect.w, nh = startRect.h;
+          if(dragging.includes('w')){ nx = startRect.x + dx; nw = startRect.w - dx; }
+          if(dragging.includes('e')){ nw = startRect.w + dx; }
+          if(dragging.includes('n')){ ny = startRect.y + dy; nh = startRect.h - dy; }
+          if(dragging.includes('s')){ nh = startRect.h + dy; }
+          if(nw > 30 && nh > 30){ x = nx; y = ny; w = nw; h = nh; }
+        }
+        applyRect();
+      }
+      function onUp(){ dragging = null; }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchend', onUp);
+
+      function limpiar(){
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchend', onUp);
+        modal.style.display = 'none';
+      }
+
+      $('cropCancelBtn').onclick = () => { limpiar(); resolve(null); };
+      $('cropConfirmBtn').onclick = () => {
+        const scaleX = sourceCanvas.width / displayRect.width;
+        const scaleY = sourceCanvas.height / displayRect.height;
+        const sx = x * scaleX, sy = y * scaleY, sw = w * scaleX, sh = h * scaleY;
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = sw; outCanvas.height = sh;
+        outCanvas.getContext('2d').drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+        limpiar();
+        outCanvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92);
+      };
+    });
+  });
+}
+
+async function archivoAImagen(file){
+  if(esPDF(file)){
+    const canvas = await pdfACanvas(file, 2.5);
+    const blob = await mostrarRecortador(canvas);
+    if(!blob) return null;
+    return { blob, nombre: file.name.replace(/\.pdf$/i, '.jpg') };
+  }
+  return { blob: file, nombre: file.name };
+}
 
 let session = null;
 let miUsuario = null;      // fila de la tabla usuarios
@@ -496,14 +635,18 @@ window.showPlanos = showPlanos;
 function nuevoPlano(){
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'image/*';
+  input.accept = 'image/*,application/pdf';
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;
     const etiqueta = prompt('Nombre del plano (ej. Piso 3, Sótano 1):');
     if(!etiqueta) return;
-    const path = `planos/${proyectoActual.id}/${Date.now()}_${file.name}`;
-    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, file);
+    let archivo;
+    try{ archivo = await archivoAImagen(file); }
+    catch(err){ alert('No se pudo leer el PDF: ' + err.message); return; }
+    if(!archivo) return;
+    const path = `planos/${proyectoActual.id}/${Date.now()}_${archivo.nombre}`;
+    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, archivo.blob, { contentType: 'image/jpeg' });
     if(upErr){ alert('Error subiendo la imagen: ' + upErr.message); return; }
     const { data: pub } = sb.storage.from(BUCKET).getPublicUrl(path);
     const { error: insErr } = await sb.from('planos').insert({ proyecto_id: proyectoActual.id, etiqueta, imagen_url: pub.publicUrl });
@@ -523,6 +666,32 @@ async function openPlano(pl){
   renderSideEmpty();
   await cargarPuntos();
 }
+
+$('replacePlanoBtn').onclick = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*,application/pdf';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    if(!confirm('Los puntos que ya creaste se quedan en la misma posición (%). Si la distribución del plano cambió, puede que ya no coincidan exactamente y haya que reubicarlos. ¿Continuar?')) return;
+    let archivo;
+    try{ archivo = await archivoAImagen(file); }
+    catch(err){ alert('No se pudo leer el PDF: ' + err.message); return; }
+    if(!archivo) return;
+    const path = `planos/${proyectoActual.id}/${Date.now()}_${archivo.nombre}`;
+    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, archivo.blob, { contentType: 'image/jpeg' });
+    if(upErr){ alert('Error subiendo la imagen: ' + upErr.message); return; }
+    const { data: pub } = sb.storage.from(BUCKET).getPublicUrl(path);
+    const { error: updErr } = await sb.from('planos').update({ imagen_url: pub.publicUrl }).eq('id', planoActual.id);
+    if(updErr){ alert('Error actualizando el plano: ' + updErr.message); return; }
+    planoActual.imagen_url = pub.publicUrl;
+    $('planImg').src = pub.publicUrl;
+    renderPins();
+    alert('Plano reemplazado. Revisa que tus puntos sigan cayendo en el lugar correcto.');
+  };
+  input.click();
+};
 
 // ---------------- PUNTOS ----------------
 async function cargarPuntos(){
