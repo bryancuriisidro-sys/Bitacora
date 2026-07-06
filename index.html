@@ -321,6 +321,8 @@
     </div>
     <div class="layout mode-plan" id="layoutBox">
       <div class="plan-pane">
+        <div id="planLoadingOverlay" style="display:none;position:absolute;inset:0;background:rgba(244,242,237,.85);
+          z-index:50;align-items:center;justify-content:center;font-size:13px;color:var(--marino);">Cargando piso…</div>
         <div class="plan-inner" id="planInner">
           <img id="planImg" src="" draggable="false">
         </div>
@@ -514,9 +516,15 @@ let puntos = [];
 let compareSelection = [];
 let modoAgregarPunto = false;
 let panoViewer = null;
-let lastUsedDate = new Date().toISOString().slice(0,10);
+let lastUsedDate = fechaLocalHoy();
 
 const $ = (id) => document.getElementById(id);
+
+function fechaLocalHoy(){
+  const d = new Date();
+  const offsetMs = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offsetMs).toISOString().slice(0, 10);
+}
 
 // ---------------- AUTH ----------------
 $('showSignup').onclick = () => { $('loginForm').style.display='none'; $('signupForm').style.display='block'; };
@@ -791,6 +799,29 @@ async function openProyecto(p){
 
 
 // ---------------- PLANOS ----------------
+async function mostrarResumenProyecto(listaPlanos){
+  const idsPlanos = listaPlanos.map(p => p.id);
+  let totalPuntos = 0, totalFotos = 0;
+  if(idsPlanos.length){
+    const { count: cPuntos } = await sb.from('puntos').select('*', { count: 'exact', head: true }).in('plano_id', idsPlanos);
+    totalPuntos = cPuntos || 0;
+    const { data: idsPuntosData } = await sb.from('puntos').select('id').in('plano_id', idsPlanos);
+    const idsPuntos = (idsPuntosData || []).map(p => p.id);
+    if(idsPuntos.length){
+      const { count: cFotos } = await sb.from('fotos').select('*', { count: 'exact', head: true }).in('punto_id', idsPuntos);
+      totalFotos = cFotos || 0;
+    }
+  }
+  let resumen = document.getElementById('resumenProyecto');
+  if(!resumen){
+    resumen = document.createElement('div');
+    resumen.id = 'resumenProyecto';
+    resumen.style.cssText = 'font-size:12px;color:#6b665c;margin-bottom:14px;';
+    $('planosView').insertBefore(resumen, $('planosList'));
+  }
+  resumen.innerHTML = `Todo el proyecto: <b style="color:var(--grafito)">${totalPuntos}</b> puntos en total · <b style="color:var(--grafito)">${totalFotos}</b> fotos en total`;
+}
+
 async function showPlanos(){
   planoActual = null;
   $('pageTitle').textContent = proyectoActual.nombre;
@@ -799,6 +830,7 @@ async function showPlanos(){
   const { data } = await sb.from('planos').select('*').eq('proyecto_id', proyectoActual.id).order('orden');
   const lista = data || [];
   const puedeReordenar = miUsuario.rol !== 'visor';
+  mostrarResumenProyecto(lista);
   const list = $('planosList');
   list.innerHTML = '';
   lista.forEach((pl, idx) => {
@@ -889,6 +921,7 @@ async function openPlano(pl){
   $('pageTitle').textContent = pl.etiqueta;
   renderCrumbs();
   showView('plano');
+  $('planLoadingOverlay').style.display = 'flex';
   $('planImg').src = pl.imagen_url;
   puntoActual = null;
   renderSideEmpty();
@@ -909,6 +942,7 @@ async function openPlano(pl){
   }
   await cargarSelectorPisos();
   await cargarPuntos();
+  $('planLoadingOverlay').style.display = 'none';
 }
 
 function actualizarBotonCandado(){
@@ -1102,9 +1136,20 @@ function renderSide(pt, fotos){
     fotos.forEach(f => {
       const chip = document.createElement('div');
       chip.className = 'photo-chip' + (compareSelection.includes(f.id) ? ' sel' : '');
-      chip.innerHTML = `<img src="${f.storage_url}"><span class="lbl">${labelOf(f)}${f.es_referencia ? '<span class="ref-tag">Diseño</span>' : ''}</span>${puedoEditar ? '<span class="rm" title="Eliminar">✕</span>' : ''}`;
+      chip.innerHTML = `<img src="${f.storage_url}"><span class="lbl">${labelOf(f)}${f.es_referencia ? '<span class="ref-tag">Diseño</span>' : ''}</span>${(puedoEditar && !f.es_referencia) ? '<span class="rm" title="Editar fecha" style="font-size:13px;">✎</span>' : ''}${puedoEditar ? '<span class="rm" title="Eliminar">✕</span>' : ''}`;
+      if(puedoEditar && !f.es_referencia){
+        const btnEditar = chip.querySelectorAll('.rm')[0];
+        btnEditar.onclick = async (ev) => {
+          ev.stopPropagation();
+          const nueva = prompt('Nueva fecha (AAAA-MM-DD):', f.fecha);
+          if(!nueva || !nueva.trim()) return;
+          const { error } = await sb.from('fotos').update({ fecha: nueva.trim() }).eq('id', f.id);
+          if(error){ alert('No se pudo actualizar: ' + error.message); return; }
+          seleccionarPunto(pt);
+        };
+      }
       if(puedoEditar){
-        chip.querySelector('.rm').onclick = async (ev) => {
+        chip.querySelectorAll('.rm')[puedoEditar && !f.es_referencia ? 1 : 0].onclick = async (ev) => {
           ev.stopPropagation();
           if(!confirm('¿Eliminar esta foto?')) return;
           await sb.from('fotos').delete().eq('id', f.id);
@@ -1189,7 +1234,7 @@ async function handleUpload(e, pt){
   const files = Array.from(e.target.files || []);
   if(files.length === 0) return;
   const isRef = $('refCheck').checked;
-  const fecha = $('dateInput').value || new Date().toISOString().slice(0,10);
+  const fecha = $('dateInput').value || fechaLocalHoy();
   if(!isRef){ lastUsedDate = fecha; }
   const etiqueta = ($('refLabelInput').value || 'Diseño / modelo').trim();
   const status = $('uploadStatus');
@@ -1297,6 +1342,10 @@ function renderPanoDualCompare(host, a, b){
   const viewerL = pannellum.viewer('panoL', { type:'equirectangular', panorama:a.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
   const viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
   panoViewer = viewerL;
+  setTimeout(() => {
+    try{ viewerL.resize(); }catch(e){}
+    try{ viewerR.resize(); }catch(e){}
+  }, 150);
   let offsetDeg = 0, master = null, syncing = true;
   wrap.querySelector('#cellL').onpointerdown = () => master = viewerL;
   wrap.querySelector('#cellR').onpointerdown = () => master = viewerR;
