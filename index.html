@@ -198,7 +198,7 @@
   .loading-box{padding:30px;text-align:center;color:#a19c8d;font-size:12px;}
 
   .viewer-box.pano-dual{display:flex;}
-  .pano-cell{position:relative;flex:1;height:100%;}
+  .pano-cell{position:relative;width:50%;flex-shrink:0;height:100%;}
   .pano-cell + .pano-cell{border-left:2px solid var(--terracota);}
   .align-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-4px 0 12px;font-size:11px;color:#6b665c;}
   .align-row button{font-size:11px;background:var(--blanco);border:1px solid var(--papel-linea);
@@ -283,6 +283,7 @@
       <h1 id="pageTitle">Proyectos</h1>
     </div>
     <div style="display:flex;gap:8px;">
+      <button class="logout-btn" id="usersAdminBtn" style="display:none">Usuarios</button>
       <button class="logout-btn" id="inviteBtn" style="display:none">Invitar colega</button>
       <button class="logout-btn" id="logoutBtn">Cerrar sesión</button>
     </div>
@@ -337,6 +338,15 @@
 </div>
 
 <div class="expand-backdrop" id="expandBackdrop"></div>
+
+<div id="usuariosModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;padding:26px;max-width:760px;width:100%;max-height:82vh;overflow:auto;border-radius:8px;">
+    <h3 style="margin:0 0 4px;font-family:Georgia,serif;font-size:18px;font-weight:400;">Usuarios de todas las empresas</h3>
+    <div id="usuariosResumen" style="font-size:12px;color:#6b665c;margin-bottom:16px;"></div>
+    <div id="usuariosLista"></div>
+    <button id="usuariosCerrarBtn" class="del-btn" style="margin-top:16px;width:100%;">Cerrar</button>
+  </div>
+</div>
 
 <div id="inviteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;align-items:center;justify-content:center;padding:20px;">
   <div style="background:#fff;padding:26px;max-width:380px;width:100%;border-radius:8px;">
@@ -599,6 +609,37 @@ document.querySelectorAll('#layoutToggle button').forEach(btn => {
   });
 });
 
+$('usersAdminBtn').onclick = async () => {
+  $('usuariosModal').style.display = 'flex';
+  $('usuariosResumen').textContent = 'Cargando...';
+  $('usuariosLista').innerHTML = '';
+  const { data, error } = await sb.rpc('listar_usuarios_admin');
+  if(error){ $('usuariosResumen').innerHTML = '<span style="color:#C0001C">Error: ' + error.message + '</span>'; return; }
+  const usuarios = data || [];
+  const confirmados = usuarios.filter(u => u.confirmado).length;
+  $('usuariosResumen').innerHTML = `<b>${usuarios.length}</b> cuentas creadas en total · <b>${confirmados}</b> confirmadas · <b>${usuarios.length - confirmados}</b> pendientes de confirmar su correo`;
+  const cont = $('usuariosLista');
+  usuarios.forEach(u => {
+    const fila = document.createElement('div');
+    fila.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #E4E0D6;font-size:12.5px;';
+    fila.innerHTML = `
+      <span style="flex:2;">${u.email}${u.confirmado ? '' : ' <span style="color:#BA7517;font-size:10px;">(sin confirmar)</span>'}</span>
+      <span style="flex:1.5;color:#6b665c;">${u.empresa_nombre || '—'}</span>
+      <select style="flex:1;" data-id="${u.id}">
+        <option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Admin</option>
+        <option value="editor" ${u.rol === 'editor' ? 'selected' : ''}>Editor</option>
+        <option value="visor" ${u.rol === 'visor' ? 'selected' : ''}>Visor</option>
+      </select>
+    `;
+    fila.querySelector('select').onchange = async (e) => {
+      const { error } = await sb.from('usuarios').update({ rol: e.target.value }).eq('id', u.id);
+      if(error) alert('No se pudo cambiar el rol: ' + error.message);
+    };
+    cont.appendChild(fila);
+  });
+};
+$('usuariosCerrarBtn').onclick = () => { $('usuariosModal').style.display = 'none'; };
+
 $('inviteBtn').onclick = () => {
   $('inviteEmail').value = '';
   $('inviteRol').value = 'editor';
@@ -683,9 +724,11 @@ async function boot(){
   $('appScreen').style.display = 'block';
   if(miUsuario.super_admin){
     $('inviteBtn').style.display = 'none';
+    $('usersAdminBtn').style.display = '';
     showEmpresas();
   } else {
     $('inviteBtn').style.display = (miUsuario.rol === 'admin') ? '' : 'none';
+    $('usersAdminBtn').style.display = 'none';
     showProyectos();
   }
 }
@@ -799,19 +842,36 @@ async function openProyecto(p){
 
 
 // ---------------- PLANOS ----------------
-async function mostrarResumenProyecto(listaPlanos){
+async function calcularConteosProyecto(listaPlanos){
   const idsPlanos = listaPlanos.map(p => p.id);
-  let totalPuntos = 0, totalFotos = 0;
-  if(idsPlanos.length){
-    const { count: cPuntos } = await sb.from('puntos').select('*', { count: 'exact', head: true }).in('plano_id', idsPlanos);
-    totalPuntos = cPuntos || 0;
-    const { data: idsPuntosData } = await sb.from('puntos').select('id').in('plano_id', idsPlanos);
-    const idsPuntos = (idsPuntosData || []).map(p => p.id);
-    if(idsPuntos.length){
-      const { count: cFotos } = await sb.from('fotos').select('*', { count: 'exact', head: true }).in('punto_id', idsPuntos).is('eliminado_en', null);
-      totalFotos = cFotos || 0;
-    }
+  const conteoPorPlano = {};
+  listaPlanos.forEach(p => { conteoPorPlano[p.id] = { puntos: 0, fotos: 0 }; });
+  if(!idsPlanos.length) return { conteoPorPlano, totalPuntos: 0, totalFotos: 0 };
+
+  const { data: puntosData } = await sb.from('puntos').select('id, plano_id').in('plano_id', idsPlanos);
+  const puntos = puntosData || [];
+  const puntoAPlano = {};
+  puntos.forEach(pt => {
+    puntoAPlano[pt.id] = pt.plano_id;
+    if(conteoPorPlano[pt.plano_id]) conteoPorPlano[pt.plano_id].puntos++;
+  });
+
+  const idsPuntos = puntos.map(pt => pt.id);
+  if(idsPuntos.length){
+    const { data: fotosData } = await sb.from('fotos').select('punto_id').in('punto_id', idsPuntos).is('eliminado_en', null);
+    (fotosData || []).forEach(f => {
+      const planoId = puntoAPlano[f.punto_id];
+      if(planoId && conteoPorPlano[planoId]) conteoPorPlano[planoId].fotos++;
+    });
   }
+
+  const totalPuntos = puntos.length;
+  const totalFotos = Object.values(conteoPorPlano).reduce((s, c) => s + c.fotos, 0);
+  return { conteoPorPlano, totalPuntos, totalFotos };
+}
+
+async function mostrarResumenProyecto(listaPlanos){
+  const { conteoPorPlano, totalPuntos, totalFotos } = await calcularConteosProyecto(listaPlanos);
   let resumen = document.getElementById('resumenProyecto');
   if(!resumen){
     resumen = document.createElement('div');
@@ -820,6 +880,7 @@ async function mostrarResumenProyecto(listaPlanos){
     $('planosView').insertBefore(resumen, $('planosList'));
   }
   resumen.innerHTML = `Todo el proyecto: <b style="color:var(--grafito)">${totalPuntos}</b> puntos en total · <b style="color:var(--grafito)">${totalFotos}</b> fotos en total`;
+  return conteoPorPlano;
 }
 
 async function showPlanos(){
@@ -830,13 +891,14 @@ async function showPlanos(){
   const { data } = await sb.from('planos').select('*').eq('proyecto_id', proyectoActual.id).order('orden');
   const lista = data || [];
   const puedeReordenar = miUsuario.rol !== 'visor';
-  mostrarResumenProyecto(lista);
+  const conteoPorPlano = await mostrarResumenProyecto(lista);
   const list = $('planosList');
   list.innerHTML = '';
   lista.forEach((pl, idx) => {
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = `<div class="name">${pl.etiqueta}</div>`;
+    const c = conteoPorPlano[pl.id] || { puntos: 0, fotos: 0 };
+    card.innerHTML = `<div class="name">${pl.etiqueta}</div><div class="meta">${c.puntos} puntos · ${c.fotos} fotos</div>`;
     if(pl.imagen_url){
       const img = document.createElement('img');
       img.src = pl.imagen_url;
@@ -1380,6 +1442,10 @@ function renderPanoDualCompare(host, a, b){
       const viewerL = pannellum.viewer('panoL', { type:'equirectangular', panorama:a.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
       const viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
       panoViewer = viewerL;
+      setTimeout(() => {
+        try{ viewerL.resize(); }catch(e){}
+        try{ viewerR.resize(); }catch(e){}
+      }, 400);
       let offsetDeg = 0, master = null, syncing = true;
       wrap.querySelector('#cellL').onpointerdown = () => master = viewerL;
       wrap.querySelector('#cellR').onpointerdown = () => master = viewerR;
