@@ -808,7 +808,7 @@ async function mostrarResumenProyecto(listaPlanos){
     const { data: idsPuntosData } = await sb.from('puntos').select('id').in('plano_id', idsPlanos);
     const idsPuntos = (idsPuntosData || []).map(p => p.id);
     if(idsPuntos.length){
-      const { count: cFotos } = await sb.from('fotos').select('*', { count: 'exact', head: true }).in('punto_id', idsPuntos);
+      const { count: cFotos } = await sb.from('fotos').select('*', { count: 'exact', head: true }).in('punto_id', idsPuntos).is('eliminado_en', null);
       totalFotos = cFotos || 0;
     }
   }
@@ -1015,7 +1015,7 @@ async function cargarPuntos(){
   const { data } = await sb.from('puntos').select('*').eq('plano_id', planoActual.id);
   puntos = data || [];
   if(puntos.length){
-    const { data: fotosData } = await sb.from('fotos').select('punto_id').in('punto_id', puntos.map(p => p.id));
+    const { data: fotosData } = await sb.from('fotos').select('punto_id').in('punto_id', puntos.map(p => p.id)).is('eliminado_en', null);
     const conteo = {};
     (fotosData || []).forEach(f => { conteo[f.punto_id] = (conteo[f.punto_id] || 0) + 1; });
     puntos.forEach(pt => { pt._tieneFoto = (conteo[pt.id] || 0) > 0; });
@@ -1063,7 +1063,7 @@ async function seleccionarPunto(pt){
   compareSelection = [];
   renderPins();
   $('side').innerHTML = '<div class="loading-box">Cargando fotos…</div>';
-  const { data: fotosRaw } = await sb.from('fotos').select('*').eq('punto_id', pt.id);
+  const { data: fotosRaw } = await sb.from('fotos').select('*').eq('punto_id', pt.id).is('eliminado_en', null);
   const fotos = (fotosRaw || []).sort((a, b) => {
     if(a.es_referencia !== b.es_referencia) return a.es_referencia ? -1 : 1;
     return (b.fecha || '').localeCompare(a.fecha || '');
@@ -1102,9 +1102,11 @@ function renderSide(pt, fotos){
     <div class="photo-list" id="photoList"></div>
     <div class="compare-hint" id="compareHint"></div>
     <div id="viewerHost"></div>
+    ${puedoEditar ? '<button class="del-btn" id="papeleraBtn" style="width:100%;margin-top:16px;">🗑 Ver papelera</button><div id="papeleraBox"></div>' : ''}
   `;
 
   if(puedoEditar){
+    $('papeleraBtn').onclick = () => mostrarPapelera(pt);
     $('renameBtn').onclick = async () => {
       const nuevo = prompt('Nombre del punto:', pt.nombre);
       if(!nuevo || !nuevo.trim()) return;
@@ -1136,10 +1138,9 @@ function renderSide(pt, fotos){
     fotos.forEach(f => {
       const chip = document.createElement('div');
       chip.className = 'photo-chip' + (compareSelection.includes(f.id) ? ' sel' : '');
-      chip.innerHTML = `<img src="${f.storage_url}"><span class="lbl">${labelOf(f)}${f.es_referencia ? '<span class="ref-tag">Diseño</span>' : ''}</span>${(puedoEditar && !f.es_referencia) ? '<span class="rm" title="Editar fecha" style="font-size:13px;">✎</span>' : ''}${puedoEditar ? '<span class="rm" title="Eliminar">✕</span>' : ''}`;
+      chip.innerHTML = `<img src="${f.storage_url}"><span class="lbl">${labelOf(f)}${f.es_referencia ? '<span class="ref-tag">Diseño</span>' : ''}</span>${(puedoEditar && !f.es_referencia) ? '<span class="rm-edit" title="Editar fecha" style="font-size:13px;cursor:pointer;color:#c9c4b6;">✎</span>' : ''}${puedoEditar ? '<span class="rm-del" title="Eliminar" style="font-size:15px;cursor:pointer;color:#c9c4b6;">✕</span>' : ''}`;
       if(puedoEditar && !f.es_referencia){
-        const btnEditar = chip.querySelectorAll('.rm')[0];
-        btnEditar.onclick = async (ev) => {
+        chip.querySelector('.rm-edit').onclick = async (ev) => {
           ev.stopPropagation();
           const nueva = prompt('Nueva fecha (AAAA-MM-DD):', f.fecha);
           if(!nueva || !nueva.trim()) return;
@@ -1149,10 +1150,10 @@ function renderSide(pt, fotos){
         };
       }
       if(puedoEditar){
-        chip.querySelectorAll('.rm')[puedoEditar && !f.es_referencia ? 1 : 0].onclick = async (ev) => {
+        chip.querySelector('.rm-del').onclick = async (ev) => {
           ev.stopPropagation();
-          if(!confirm('¿Eliminar esta foto?')) return;
-          await sb.from('fotos').delete().eq('id', f.id);
+          if(!confirm('¿Enviar esta foto a la papelera? Se puede recuperar dentro de las próximas 24 horas.')) return;
+          await sb.from('fotos').update({ eliminado_en: new Date().toISOString() }).eq('id', f.id);
           seleccionarPunto(pt);
         };
       }
@@ -1162,6 +1163,34 @@ function renderSide(pt, fotos){
   }
   $('compareHint').textContent = fotos.length >= 2 ? 'Selecciona 1 foto (vista simple) o 2 (comparador).' : '';
   renderViewer(fotos);
+}
+
+async function mostrarPapelera(pt){
+  const box = $('papeleraBox');
+  box.innerHTML = '<div style="font-size:11px;color:#a19c8d;margin-top:8px;">Cargando papelera…</div>';
+
+  // Borra en definitiva lo que ya pasó las 24 horas
+  const limite = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  await sb.from('fotos').delete().eq('punto_id', pt.id).not('eliminado_en', 'is', null).lt('eliminado_en', limite);
+
+  const { data } = await sb.from('fotos').select('*').eq('punto_id', pt.id).not('eliminado_en', 'is', null).order('eliminado_en', { ascending: false });
+  const recuperables = data || [];
+  if(recuperables.length === 0){
+    box.innerHTML = '<div style="font-size:11px;color:#a19c8d;margin-top:8px;">La papelera de este punto está vacía.</div>';
+    return;
+  }
+  box.innerHTML = '<div style="font-size:11px;color:#6b665c;margin:10px 0 6px;">Se eliminan en definitiva 24 horas después de mandarlas aquí:</div>';
+  recuperables.forEach(f => {
+    const horasRestantes = Math.max(0, Math.round(24 - (Date.now() - new Date(f.eliminado_en).getTime()) / 3600000));
+    const chip = document.createElement('div');
+    chip.className = 'photo-chip';
+    chip.innerHTML = `<img src="${f.storage_url}"><span class="lbl">${labelOf(f)} · quedan ~${horasRestantes}h</span><button class="del-btn" style="padding:4px 8px;">Restaurar</button>`;
+    chip.querySelector('button').onclick = async () => {
+      await sb.from('fotos').update({ eliminado_en: null }).eq('id', f.id);
+      seleccionarPunto(pt);
+    };
+    box.appendChild(chip);
+  });
 }
 
 function toggleCompare(id, pt, fotos){
@@ -1263,7 +1292,9 @@ async function handleUpload(e, pt){
   status.className = fail ? 'upload-status err' : 'upload-status';
   status.textContent = fail ? `${ok} guardada(s), ${fail} fallaron.` : `${ok} foto(s) guardada(s).`;
   await cargarPuntos();
-  seleccionarPunto(pt);
+  if(puntoActual && puntoActual.id === pt.id){
+    seleccionarPunto(pt);
+  }
 }
 
 // ---------------- VISOR / COMPARADOR (curtain, 360 sincronizado, lado a lado) ----------------
@@ -1339,33 +1370,38 @@ function renderPanoDualCompare(host, a, b){
   host.appendChild(wrap);
   const box = wrap.querySelector('#dualBox');
   attachExpand(box);
-  const viewerL = pannellum.viewer('panoL', { type:'equirectangular', panorama:a.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
-  const viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
-  panoViewer = viewerL;
-  setTimeout(() => {
-    try{ viewerL.resize(); }catch(e){}
-    try{ viewerR.resize(); }catch(e){}
-  }, 150);
-  let offsetDeg = 0, master = null, syncing = true;
-  wrap.querySelector('#cellL').onpointerdown = () => master = viewerL;
-  wrap.querySelector('#cellR').onpointerdown = () => master = viewerR;
-  function norm(d){ d=d%360; if(d>180)d-=360; if(d<-180)d+=360; return d; }
-  function upd(){ wrap.querySelector('#offsetLabel').textContent = Math.round(offsetDeg)+'°'; }
-  function loop(){
-    if(!syncing) return;
-    if(master){
-      try{
-        if(master===viewerL){ viewerR.setYaw(norm(viewerL.getYaw()+offsetDeg),false); viewerR.setPitch(viewerL.getPitch(),false); viewerR.setHfov(viewerL.getHfov(),false); }
-        else { viewerL.setYaw(norm(viewerR.getYaw()-offsetDeg),false); viewerL.setPitch(viewerR.getPitch(),false); viewerL.setHfov(viewerR.getHfov(),false); }
-      }catch(e){}
-    }
-    requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
-  wrap.querySelectorAll('.align-row button[data-d]').forEach(btn => btn.onclick = () => { offsetDeg = norm(offsetDeg + parseInt(btn.dataset.d,10)); upd(); });
-  wrap.querySelector('#flip180Btn').onclick = () => { offsetDeg = norm(offsetDeg + 180); upd(); };
-  wrap.querySelector('#resetOffsetBtn').onclick = () => { offsetDeg = 0; upd(); };
-  document.addEventListener('__stopPanoSync', () => { syncing = false; }, { once:true });
+
+  // Esperamos dos "frames" para que el navegador termine de calcular el ancho
+  // real de cada mitad (flex) ANTES de crear los visores — así ninguno de
+  // los dos arranca midiendo un tamaño incorrecto (que es lo que causaba
+  // que uno se viera borroso).
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const viewerL = pannellum.viewer('panoL', { type:'equirectangular', panorama:a.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
+      const viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
+      panoViewer = viewerL;
+      let offsetDeg = 0, master = null, syncing = true;
+      wrap.querySelector('#cellL').onpointerdown = () => master = viewerL;
+      wrap.querySelector('#cellR').onpointerdown = () => master = viewerR;
+      function norm(d){ d=d%360; if(d>180)d-=360; if(d<-180)d+=360; return d; }
+      function upd(){ wrap.querySelector('#offsetLabel').textContent = Math.round(offsetDeg)+'°'; }
+      function loop(){
+        if(!syncing) return;
+        if(master){
+          try{
+            if(master===viewerL){ viewerR.setYaw(norm(viewerL.getYaw()+offsetDeg),false); viewerR.setPitch(viewerL.getPitch(),false); viewerR.setHfov(viewerL.getHfov(),false); }
+            else { viewerL.setYaw(norm(viewerR.getYaw()-offsetDeg),false); viewerL.setPitch(viewerR.getPitch(),false); viewerL.setHfov(viewerR.getHfov(),false); }
+          }catch(e){}
+        }
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+      wrap.querySelectorAll('.align-row button[data-d]').forEach(btn => btn.onclick = () => { offsetDeg = norm(offsetDeg + parseInt(btn.dataset.d,10)); upd(); });
+      wrap.querySelector('#flip180Btn').onclick = () => { offsetDeg = norm(offsetDeg + 180); upd(); };
+      wrap.querySelector('#resetOffsetBtn').onclick = () => { offsetDeg = 0; upd(); };
+      document.addEventListener('__stopPanoSync', () => { syncing = false; }, { once:true });
+    });
+  });
 }
 
 function renderSideBySide(host, a, b){
