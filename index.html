@@ -269,8 +269,7 @@
     </ul>
     <div class="contact-block">
       <b>¿Tienes un proyecto?</b>
-      Escríbenos<br>
-      
+      Escríbenos
     </div>
   </div>
   </div>
@@ -307,8 +306,10 @@
   <div id="planoDetailView" style="display:none">
     <div class="toolbar">
       <select id="floorSwitcher" style="min-width:180px;"></select>
+      <button id="lockToggleBtn" class="reorder-btn" style="font-size:12px;padding:8px 14px;">🔒 Plano bloqueado</button>
       <span class="hint" id="planHint">Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos</span>
       <button class="del-btn" id="replacePlanoBtn">Reemplazar plano</button>
+      <button class="del-btn" id="managePlanosBtn">Gestionar planos</button>
       <div class="stats" id="stats"></div>
     </div>
     <div class="toolbar" style="margin-top:-4px;">
@@ -511,6 +512,7 @@ let planoActual = null;
 let puntoActual = null;
 let puntos = [];
 let compareSelection = [];
+let modoAgregarPunto = false;
 let panoViewer = null;
 let lastUsedDate = new Date().toISOString().slice(0,10);
 
@@ -779,7 +781,12 @@ window.showProyectos = showProyectos;
 
 async function openProyecto(p){
   proyectoActual = p;
-  showPlanos();
+  const { data } = await sb.from('planos').select('*').eq('proyecto_id', p.id).order('orden').limit(1);
+  if(data && data.length){
+    await openPlano(data[0]);
+  } else {
+    showPlanos();
+  }
 }
 
 
@@ -885,18 +892,44 @@ async function openPlano(pl){
   $('planImg').src = pl.imagen_url;
   puntoActual = null;
   renderSideEmpty();
+  modoAgregarPunto = false;
   if(miUsuario.rol === 'visor'){
     $('planInner').style.cursor = 'default';
     $('planHint').textContent = 'Clic en un punto para ver sus fotos';
     $('replacePlanoBtn').style.display = 'none';
+    $('managePlanosBtn').style.display = 'none';
+    $('lockToggleBtn').style.display = 'none';
   } else {
-    $('planInner').style.cursor = 'crosshair';
-    $('planHint').textContent = 'Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos';
+    $('planInner').style.cursor = 'default';
+    $('planHint').textContent = 'Desbloquea el plano para poder crear puntos nuevos';
     $('replacePlanoBtn').style.display = '';
+    $('managePlanosBtn').style.display = '';
+    $('lockToggleBtn').style.display = '';
+    actualizarBotonCandado();
   }
   await cargarSelectorPisos();
   await cargarPuntos();
 }
+
+function actualizarBotonCandado(){
+  const btn = $('lockToggleBtn');
+  if(modoAgregarPunto){
+    btn.textContent = '🔓 Modo agregar puntos (activo)';
+    btn.style.background = 'var(--terracota)';
+    $('planInner').style.cursor = 'crosshair';
+    $('planHint').textContent = 'Clic en el plano = nuevo punto · Clic en un punto = ver/subir fotos';
+  } else {
+    btn.textContent = '🔒 Plano bloqueado';
+    btn.style.background = 'var(--marino)';
+    $('planInner').style.cursor = 'default';
+    $('planHint').textContent = 'Desbloquea el plano para poder crear puntos nuevos';
+  }
+}
+
+$('lockToggleBtn').onclick = () => {
+  modoAgregarPunto = !modoAgregarPunto;
+  actualizarBotonCandado();
+};
 
 async function cargarSelectorPisos(){
   const { data } = await sb.from('planos').select('*').eq('proyecto_id', proyectoActual.id).order('orden');
@@ -914,6 +947,8 @@ async function cargarSelectorPisos(){
     if(elegido) openPlano(elegido);
   };
 }
+
+$('managePlanosBtn').onclick = () => showPlanos();
 
 $('replacePlanoBtn').onclick = () => {
   const input = document.createElement('input');
@@ -945,16 +980,18 @@ $('replacePlanoBtn').onclick = () => {
 async function cargarPuntos(){
   const { data } = await sb.from('puntos').select('*').eq('plano_id', planoActual.id);
   puntos = data || [];
-  await renderStats();
+  if(puntos.length){
+    const { data: fotosData } = await sb.from('fotos').select('punto_id').in('punto_id', puntos.map(p => p.id));
+    const conteo = {};
+    (fotosData || []).forEach(f => { conteo[f.punto_id] = (conteo[f.punto_id] || 0) + 1; });
+    puntos.forEach(pt => { pt._tieneFoto = (conteo[pt.id] || 0) > 0; });
+  }
+  renderStats();
   renderPins();
 }
 
-async function renderStats(){
-  let conFoto = 0;
-  for(const pt of puntos){
-    const { count } = await sb.from('fotos').select('*', { count: 'exact', head: true }).eq('punto_id', pt.id);
-    if(count > 0) conFoto++;
-  }
+function renderStats(){
+  const conFoto = puntos.filter(pt => pt._tieneFoto).length;
   $('stats').innerHTML = `<span><b>${puntos.length}</b> puntos</span><span><b>${conFoto}</b> con fotos</span>`;
 }
 
@@ -974,6 +1011,7 @@ function renderPins(){
 $('planInner').addEventListener('click', async (e) => {
   if(e.target.closest('.pin')) return;
   if(miUsuario.rol === 'visor') return;
+  if(!modoAgregarPunto) return;
   const rect = $('planImg').getBoundingClientRect();
   const xPct = ((e.clientX - rect.left) / rect.width) * 100;
   const yPct = ((e.clientY - rect.top) / rect.height) * 100;
