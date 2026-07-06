@@ -1453,10 +1453,9 @@ function renderPanoDualCompare(host, a, b){
       try{ viewerR.on('load', () => ocultarCarga('loadingR')); }catch(e){}
       // Respaldo por si el evento 'load' no llega a dispararse en esta versión:
       setTimeout(() => { ocultarCarga('loadingL'); ocultarCarga('loadingR'); }, 4000);
-      setTimeout(() => {
-        try{ viewerL.resize(); }catch(e){}
-        try{ viewerR.resize(); }catch(e){}
-      }, 400);
+      [200, 500, 1000].forEach(ms => {
+        setTimeout(() => { window.dispatchEvent(new Event('resize')); }, ms);
+      });
       let offsetDeg = 0, master = null, syncing = true;
       wrap.querySelector('#cellL').onpointerdown = () => master = viewerL;
       wrap.querySelector('#cellR').onpointerdown = () => master = viewerR;
