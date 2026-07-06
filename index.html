@@ -199,6 +199,8 @@
 
   .viewer-box.pano-dual{display:flex;}
   .pano-cell{position:relative;width:50%;flex-shrink:0;height:100%;}
+  .pano-loading{position:absolute;inset:0;background:rgba(17,17,17,.75);color:#fff;font-size:12px;
+    display:flex;align-items:center;justify-content:center;z-index:7;pointer-events:none;}
   .pano-cell + .pano-cell{border-left:2px solid var(--terracota);}
   .align-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-4px 0 12px;font-size:11px;color:#6b665c;}
   .align-row button{font-size:11px;background:var(--blanco);border:1px solid var(--papel-linea);
@@ -523,6 +525,7 @@ let proyectoActual = null;
 let planoActual = null;
 let puntoActual = null;
 let puntos = [];
+let totalFotosPisoActual = 0;
 let compareSelection = [];
 let modoAgregarPunto = false;
 let panoViewer = null;
@@ -1076,8 +1079,10 @@ $('replacePlanoBtn').onclick = () => {
 async function cargarPuntos(){
   const { data } = await sb.from('puntos').select('*').eq('plano_id', planoActual.id);
   puntos = data || [];
+  totalFotosPisoActual = 0;
   if(puntos.length){
     const { data: fotosData } = await sb.from('fotos').select('punto_id').in('punto_id', puntos.map(p => p.id)).is('eliminado_en', null);
+    totalFotosPisoActual = (fotosData || []).length;
     const conteo = {};
     (fotosData || []).forEach(f => { conteo[f.punto_id] = (conteo[f.punto_id] || 0) + 1; });
     puntos.forEach(pt => { pt._tieneFoto = (conteo[pt.id] || 0) > 0; });
@@ -1088,7 +1093,7 @@ async function cargarPuntos(){
 
 function renderStats(){
   const conFoto = puntos.filter(pt => pt._tieneFoto).length;
-  $('stats').innerHTML = `<span><b>${puntos.length}</b> puntos</span><span><b>${conFoto}</b> con fotos</span>`;
+  $('stats').innerHTML = `<span><b>${puntos.length}</b> puntos</span><span><b>${conFoto}</b> con fotos</span><span><b>${totalFotosPisoActual}</b> fotos en total (este piso)</span>`;
 }
 
 function renderPins(){
@@ -1420,8 +1425,10 @@ function renderPanoDualCompare(host, a, b){
   const wrap = document.createElement('div');
   wrap.innerHTML = `
     <div class="viewer-box pano-dual" id="dualBox">
-      <div class="pano-cell" id="cellL"><div class="pano360" id="panoL"></div><span class="tag" style="left:8px">${labelOf(a)}</span></div>
-      <div class="pano-cell" id="cellR"><div class="pano360" id="panoR"></div><span class="tag" style="right:8px">${labelOf(b)}</span></div>
+      <div class="pano-cell" id="cellL"><div class="pano360" id="panoL"></div><span class="tag" style="left:8px">${labelOf(a)}</span>
+        <div class="pano-loading" id="loadingL">Cargando 360°…</div></div>
+      <div class="pano-cell" id="cellR"><div class="pano360" id="panoR"></div><span class="tag" style="right:8px">${labelOf(b)}</span>
+        <div class="pano-loading" id="loadingR">Cargando 360°…</div></div>
     </div>
     <div class="sync-note">Arrastra dentro de cualquiera para girar — la otra te sigue.</div>
     <div class="align-row">
@@ -1435,13 +1442,17 @@ function renderPanoDualCompare(host, a, b){
 
   // Esperamos dos "frames" para que el navegador termine de calcular el ancho
   // real de cada mitad (flex) ANTES de crear los visores — así ninguno de
-  // los dos arranca midiendo un tamaño incorrecto (que es lo que causaba
-  // que uno se viera borroso).
+  // los dos arranca midiendo un tamaño incorrecto.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const viewerL = pannellum.viewer('panoL', { type:'equirectangular', panorama:a.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
       const viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
       panoViewer = viewerL;
+      const ocultarCarga = (id) => { const el = document.getElementById(id); if(el) el.style.display = 'none'; };
+      try{ viewerL.on('load', () => ocultarCarga('loadingL')); }catch(e){}
+      try{ viewerR.on('load', () => ocultarCarga('loadingR')); }catch(e){}
+      // Respaldo por si el evento 'load' no llega a dispararse en esta versión:
+      setTimeout(() => { ocultarCarga('loadingL'); ocultarCarga('loadingR'); }, 4000);
       setTimeout(() => {
         try{ viewerL.resize(); }catch(e){}
         try{ viewerR.resize(); }catch(e){}
