@@ -838,6 +838,11 @@ window.showProyectos = showProyectos;
 
 async function openProyecto(p){
   proyectoActual = p;
+  const { data: principal } = await sb.from('planos').select('*').eq('proyecto_id', p.id).eq('es_principal', true).limit(1);
+  if(principal && principal.length){
+    await openPlano(principal[0]);
+    return;
+  }
   const { data } = await sb.from('planos').select('*').eq('proyecto_id', p.id).order('orden').limit(1);
   if(data && data.length){
     await openPlano(data[0]);
@@ -904,7 +909,7 @@ async function showPlanos(){
     const card = document.createElement('div');
     card.className = 'card';
     const c = conteoPorPlano[pl.id] || { puntos: 0, fotos: 0 };
-    card.innerHTML = `<div class="name">${pl.etiqueta}</div><div class="meta">${c.puntos} puntos · ${c.fotos} fotos</div>`;
+    card.innerHTML = `<div class="name">${pl.es_principal ? '★ ' : ''}${pl.etiqueta}</div><div class="meta">${c.puntos} puntos · ${c.fotos} fotos${pl.es_principal ? ' · <b style="color:var(--marino)">Principal</b>' : ''}</div>`;
     if(pl.imagen_url){
       const img = document.createElement('img');
       img.src = pl.imagen_url;
@@ -933,8 +938,19 @@ async function showPlanos(){
         if(error){ alert('No se pudo renombrar: ' + error.message); return; }
         showPlanos();
       };
+      const marcarPrincipal = document.createElement('button');
+      marcarPrincipal.textContent = pl.es_principal ? '★ Es el principal' : '☆ Marcar principal';
+      marcarPrincipal.className = 'del-btn'; marcarPrincipal.style.flex = '3'; marcarPrincipal.style.marginTop = '6px'; marcarPrincipal.style.width = '100%';
+      marcarPrincipal.disabled = pl.es_principal;
+      marcarPrincipal.onclick = async (ev) => {
+        ev.stopPropagation();
+        await sb.from('planos').update({ es_principal: false }).eq('proyecto_id', proyectoActual.id);
+        await sb.from('planos').update({ es_principal: true }).eq('id', pl.id);
+        showPlanos();
+      };
       fila.appendChild(arriba); fila.appendChild(abajo); fila.appendChild(renombrar);
       card.appendChild(fila);
+      card.appendChild(marcarPrincipal);
     }
     card.onclick = () => openPlano(pl);
     list.appendChild(card);
