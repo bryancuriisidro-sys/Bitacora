@@ -326,6 +326,9 @@
       <div class="plan-pane">
         <div id="planLoadingOverlay" style="display:none;position:absolute;inset:0;background:rgba(244,242,237,.85);
           z-index:50;align-items:center;justify-content:center;font-size:13px;color:var(--marino);">Cargando piso…</div>
+        <div id="planFloorToast" style="display:none;position:absolute;top:14px;left:50%;transform:translateX(-50%);
+          background:var(--marino);color:#fff;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:600;
+          z-index:60;box-shadow:0 4px 16px rgba(0,0,0,.25);transition:opacity .6s ease;pointer-events:none;"></div>
         <div class="plan-inner" id="planInner">
           <img id="planImg" src="" draggable="false">
         </div>
@@ -981,6 +984,17 @@ function nuevoPlano(){
   input.click();
 }
 
+function mostrarAvisoDePiso(nombre){
+  const toast = $('planFloorToast');
+  toast.textContent = nombre;
+  toast.style.opacity = '1';
+  toast.style.display = 'block';
+  clearTimeout(mostrarAvisoDePiso._t1);
+  clearTimeout(mostrarAvisoDePiso._t2);
+  mostrarAvisoDePiso._t1 = setTimeout(() => { toast.style.opacity = '0'; }, 1400);
+  mostrarAvisoDePiso._t2 = setTimeout(() => { toast.style.display = 'none'; }, 2000);
+}
+
 async function openPlano(pl){
   planoActual = pl;
   $('pageTitle').textContent = pl.etiqueta;
@@ -991,6 +1005,7 @@ async function openPlano(pl){
   puntoActual = null;
   renderSideEmpty();
   modoAgregarPunto = false;
+  mostrarAvisoDePiso(pl.etiqueta);
   if(miUsuario.rol === 'visor'){
     $('planInner').style.cursor = 'default';
     $('planHint').textContent = 'Clic en un punto para ver sus fotos';
@@ -1424,18 +1439,18 @@ function renderCurtainCompare(host, a, b){
 function renderPanoDualCompare(host, a, b){
   const wrap = document.createElement('div');
   wrap.innerHTML = `
+    <div class="align-row">
+      <span>Alinear:</span><button data-d="-15">«</button><button data-d="-5">‹</button>
+      <span id="offsetLabel">0°</span><button data-d="5">›</button><button data-d="15">»</button>
+      <button id="flip180Btn">Girar 180°</button><button id="resetOffsetBtn">Reiniciar</button>
+    </div>
     <div class="viewer-box pano-dual" id="dualBox">
       <div class="pano-cell" id="cellL"><div class="pano360" id="panoL"></div><span class="tag" style="left:8px">${labelOf(a)}</span>
         <div class="pano-loading" id="loadingL">Cargando 360°…</div></div>
       <div class="pano-cell" id="cellR"><div class="pano360" id="panoR"></div><span class="tag" style="right:8px">${labelOf(b)}</span>
         <div class="pano-loading" id="loadingR">Cargando 360°…</div></div>
     </div>
-    <div class="sync-note">Arrastra dentro de cualquiera para girar — la otra te sigue.</div>
-    <div class="align-row">
-      <span>Alinear:</span><button data-d="-15">«</button><button data-d="-5">‹</button>
-      <span id="offsetLabel">0°</span><button data-d="5">›</button><button data-d="15">»</button>
-      <button id="flip180Btn">Girar 180°</button><button id="resetOffsetBtn">Reiniciar</button>
-    </div>`;
+    <div class="sync-note">Arrastra dentro de cualquiera para girar — la otra te sigue.</div>`;
   host.appendChild(wrap);
   const box = wrap.querySelector('#dualBox');
   attachExpand(box);
