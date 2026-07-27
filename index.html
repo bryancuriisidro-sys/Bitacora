@@ -202,7 +202,14 @@
   .pano-loading{position:absolute;inset:0;background:rgba(17,17,17,.75);color:#fff;font-size:12px;
     display:flex;align-items:center;justify-content:center;z-index:7;pointer-events:none;}
   .pano-cell + .pano-cell{border-left:2px solid var(--terracota);}
-  .align-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-4px 0 12px;font-size:11px;color:#6b665c;}
+  .align-row{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:8;
+    display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;
+    background:rgba(0,0,0,.6);padding:6px 10px;border-radius:20px;max-width:92%;}
+  .align-row .align-label{font-size:10.5px;color:rgba(255,255,255,.7);padding:0 2px;}
+  .align-row button{font-size:11px;background:rgba(255,255,255,.15);color:#fff;border:none;
+    padding:6px 10px;border-radius:14px;cursor:pointer;}
+  .align-row button:hover{background:var(--marino);}
+  .align-row #offsetLabel{font-size:11px;color:#fff;min-width:30px;text-align:center;}
   .align-row button{font-size:11px;background:var(--blanco);border:1px solid var(--papel-linea);
     padding:5px 9px;cursor:pointer;color:var(--grafito);}
   .sync-note{font-size:10.5px;color:#a19c8d;margin:-8px 0 12px;}
@@ -710,6 +717,10 @@ async function boot(){
   }
   const { data: usuarioRow } = await sb.from('usuarios').select('*').eq('id', session.user.id).maybeSingle();
   if(!usuarioRow){
+    const { data: porDominio } = await sb.rpc('unirse_por_dominio').catch(() => ({ data: null }));
+    if(porDominio && porDominio.ok){
+      return boot(); // ya quedó vinculado solo, recargamos boot() para continuar normal
+    }
     $('loginForm').style.display = 'none';
     $('signupForm').style.display = 'none';
     $('setupForm').style.display = 'block';
@@ -1424,6 +1435,13 @@ $('expandBackdrop').onclick = () => {
   if(panoViewer){ setTimeout(() => { try{ panoViewer.resize(); }catch(err){} }, 60); }
 };
 
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape'){
+    const abierto = document.querySelector('.viewer-box.expanded');
+    if(abierto){ $('expandBackdrop').click(); }
+  }
+});
+
 function renderCurtainCompare(host, a, b){
   const box = document.createElement('div');
   box.className = 'viewer-box';
@@ -1455,12 +1473,13 @@ function renderCurtainCompare(host, a, b){
 function renderPanoDualCompare(host, a, b){
   const wrap = document.createElement('div');
   wrap.innerHTML = `
-    <div class="align-row">
-      <span>Alinear:</span><button data-d="-15">«</button><button data-d="-5">‹</button>
-      <span id="offsetLabel">0°</span><button data-d="5">›</button><button data-d="15">»</button>
-      <button id="flip180Btn">Girar 180°</button><button id="resetOffsetBtn">Reiniciar</button>
-    </div>
     <div class="viewer-box pano-dual" id="dualBox">
+      <div class="align-row" id="alignRow">
+        <span class="align-label">Alinear</span>
+        <button data-d="-15">«</button><button data-d="-5">‹</button>
+        <span id="offsetLabel">0°</span><button data-d="5">›</button><button data-d="15">»</button>
+        <button id="flip180Btn">⟲ 180°</button><button id="resetOffsetBtn">Reiniciar</button>
+      </div>
       <div class="pano-cell" id="cellL"><div class="pano360" id="panoL"></div><span class="tag" style="left:8px">${labelOf(a)}</span>
         <div class="pano-loading" id="loadingL">Cargando 360°…</div></div>
       <div class="pano-cell" id="cellR"><div class="pano360" id="panoR"></div><span class="tag" style="right:8px">${labelOf(b)}</span>
@@ -1477,24 +1496,31 @@ function renderPanoDualCompare(host, a, b){
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const viewerL = pannellum.viewer('panoL', { type:'equirectangular', panorama:a.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
-      const viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
       panoViewer = viewerL;
       const ocultarCarga = (id) => { const el = document.getElementById(id); if(el) el.style.display = 'none'; };
       try{ viewerL.on('load', () => ocultarCarga('loadingL')); }catch(e){}
-      try{ viewerR.on('load', () => ocultarCarga('loadingR')); }catch(e){}
-      // Respaldo por si el evento 'load' no llega a dispararse en esta versión:
-      setTimeout(() => { ocultarCarga('loadingL'); ocultarCarga('loadingR'); }, 4000);
-      [200, 500, 1000].forEach(ms => {
-        setTimeout(() => { window.dispatchEvent(new Event('resize')); }, ms);
-      });
+
+      let viewerR = null;
       let offsetDeg = 0, master = null, syncing = true;
+
+      setTimeout(() => {
+        viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
+        try{ viewerR.on('load', () => ocultarCarga('loadingR')); }catch(e){}
+        [200, 500, 1000].forEach(ms => {
+          setTimeout(() => { window.dispatchEvent(new Event('resize')); }, ms);
+        });
+      }, 350);
+
+      // Respaldo por si el evento 'load' no llega a dispararse en esta versión:
+      setTimeout(() => { ocultarCarga('loadingL'); ocultarCarga('loadingR'); }, 4500);
+
       wrap.querySelector('#cellL').onpointerdown = () => master = viewerL;
-      wrap.querySelector('#cellR').onpointerdown = () => master = viewerR;
+      wrap.querySelector('#cellR').onpointerdown = () => { if(viewerR) master = viewerR; };
       function norm(d){ d=d%360; if(d>180)d-=360; if(d<-180)d+=360; return d; }
       function upd(){ wrap.querySelector('#offsetLabel').textContent = Math.round(offsetDeg)+'°'; }
       function loop(){
         if(!syncing) return;
-        if(master){
+        if(master && viewerR){
           try{
             if(master===viewerL){ viewerR.setYaw(norm(viewerL.getYaw()+offsetDeg),false); viewerR.setPitch(viewerL.getPitch(),false); viewerR.setHfov(viewerL.getHfov(),false); }
             else { viewerL.setYaw(norm(viewerR.getYaw()-offsetDeg),false); viewerL.setPitch(viewerR.getPitch(),false); viewerL.setHfov(viewerR.getHfov(),false); }
