@@ -192,8 +192,8 @@
     box-shadow:0 2px 6px rgba(0,0,0,.35);}
   .handle::before{content:"◂▸";color:#fff;font-size:9px;letter-spacing:1px;}
   .drag-cover{position:absolute;inset:0;z-index:4;cursor:ew-resize;}
-  .tag{position:absolute;bottom:8px;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
-    color:#fff;background:rgba(0,0,0,.6);padding:3px 8px;z-index:5;}
+  .tag{position:absolute;bottom:8px;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;
+    color:#fff;background:rgba(0,0,0,.7);padding:5px 11px;z-index:5;font-weight:600;border-radius:4px;}
   .pano360{position:absolute;inset:0;}
   .loading-box{padding:30px;text-align:center;color:#a19c8d;font-size:12px;}
 
@@ -202,16 +202,18 @@
   .pano-loading{position:absolute;inset:0;background:rgba(17,17,17,.75);color:#fff;font-size:12px;
     display:flex;align-items:center;justify-content:center;z-index:7;pointer-events:none;}
   .pano-cell + .pano-cell{border-left:2px solid var(--terracota);}
-  .align-row{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:8;
+  .align-row{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:8;
     display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;
-    background:rgba(0,0,0,.6);padding:6px 10px;border-radius:20px;max-width:92%;}
+    background:rgba(0,0,0,.42);padding:6px 12px;border-radius:20px;max-width:92%;
+    opacity:.72;transition:opacity .18s,background .18s;}
+  .align-row:hover{opacity:1;background:rgba(0,0,0,.82);}
+  .align-row .align-title{font-size:11px;font-weight:700;color:#fff;padding:0 6px 0 2px;
+    letter-spacing:.02em;white-space:nowrap;}
   .align-row .align-label{font-size:10.5px;color:rgba(255,255,255,.7);padding:0 2px;}
-  .align-row button{font-size:11px;background:rgba(255,255,255,.15);color:#fff;border:none;
-    padding:6px 10px;border-radius:14px;cursor:pointer;}
-  .align-row button:hover{background:var(--marino);}
   .align-row #offsetLabel{font-size:11px;color:#fff;min-width:30px;text-align:center;}
-  .align-row button{font-size:11px;background:var(--blanco);border:1px solid var(--papel-linea);
-    padding:5px 9px;cursor:pointer;color:var(--grafito);}
+  .align-row button{font-size:11px;background:rgba(255,255,255,.18);color:#fff;border:none;
+    padding:6px 10px;border-radius:14px;cursor:pointer;transition:background .15s;}
+  .align-row button:hover{background:var(--marino);}
   .sync-note{font-size:10.5px;color:#a19c8d;margin:-8px 0 12px;}
   .viewer-box.side-by-side{display:flex;}
   .sbs-cell{position:relative;flex:1;height:100%;}
@@ -539,6 +541,12 @@ let totalFotosPisoActual = 0;
 let compareSelection = [];
 let modoAgregarPunto = false;
 let panoViewer = null;
+let panoViewers = [];
+function resizeAllPanos(){
+  [50, 250, 600].forEach(ms => setTimeout(() => {
+    panoViewers.forEach(v => { try{ v && v.resize(); }catch(err){} });
+  }, ms));
+}
 let lastUsedDate = fechaLocalHoy();
 
 const $ = (id) => document.getElementById(id);
@@ -1425,14 +1433,14 @@ function attachExpand(box){
     const backdrop = $('expandBackdrop');
     box.classList.toggle('expanded');
     backdrop.classList.toggle('show', box.classList.contains('expanded'));
-    if(panoViewer){ setTimeout(() => { try{ panoViewer.resize(); }catch(err){} }, 60); }
+    resizeAllPanos();
   };
   box.appendChild(btn);
 }
 $('expandBackdrop').onclick = () => {
   document.querySelectorAll('.viewer-box.expanded').forEach(b => b.classList.remove('expanded'));
   $('expandBackdrop').classList.remove('show');
-  if(panoViewer){ setTimeout(() => { try{ panoViewer.resize(); }catch(err){} }, 60); }
+  resizeAllPanos();
 };
 
 document.addEventListener('keydown', (e) => {
@@ -1475,7 +1483,7 @@ function renderPanoDualCompare(host, a, b){
   wrap.innerHTML = `
     <div class="viewer-box pano-dual" id="dualBox">
       <div class="align-row" id="alignRow">
-        <span class="align-label">Alinear</span>
+        <span class="align-title">Cuadrar imágenes</span>
         <button data-d="-15">«</button><button data-d="-5">‹</button>
         <span id="offsetLabel">0°</span><button data-d="5">›</button><button data-d="15">»</button>
         <button id="flip180Btn">⟲ 180°</button><button id="resetOffsetBtn">Reiniciar</button>
@@ -1497,6 +1505,7 @@ function renderPanoDualCompare(host, a, b){
     requestAnimationFrame(() => {
       const viewerL = pannellum.viewer('panoL', { type:'equirectangular', panorama:a.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
       panoViewer = viewerL;
+      panoViewers.push(viewerL);
       const ocultarCarga = (id) => { const el = document.getElementById(id); if(el) el.style.display = 'none'; };
       try{ viewerL.on('load', () => ocultarCarga('loadingL')); }catch(e){}
 
@@ -1505,6 +1514,7 @@ function renderPanoDualCompare(host, a, b){
 
       setTimeout(() => {
         viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
+        panoViewers.push(viewerR);
         try{ viewerR.on('load', () => ocultarCarga('loadingR')); }catch(e){}
         [200, 500, 1000].forEach(ms => {
           setTimeout(() => { window.dispatchEvent(new Event('resize')); }, ms);
@@ -1553,6 +1563,8 @@ function renderSideBySide(host, a, b){
 
 function renderViewer(fotos){
   const host = $('viewerHost');
+  panoViewers.forEach(v => { try{ v && v.destroy(); }catch(e){} });
+  panoViewers = [];
   if(panoViewer){ try{ panoViewer.destroy(); }catch(e){} panoViewer = null; }
   document.dispatchEvent(new Event('__stopPanoSync'));
   host.innerHTML = '';
@@ -1582,6 +1594,7 @@ function renderViewer(fotos){
         const panoDiv = document.createElement('div'); panoDiv.className = 'pano360'; panoDiv.id = 'panoSolo';
         box.appendChild(panoDiv);
         panoViewer = pannellum.viewer('panoSolo', { type:'equirectangular', panorama:data.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
+        panoViewers.push(panoViewer);
         const tag = document.createElement('span'); tag.className='tag'; tag.style.left='8px';
         tag.textContent = labelOf(data) + ' · 360°'; box.appendChild(tag);
       } else {
