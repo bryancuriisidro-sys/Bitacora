@@ -202,18 +202,25 @@
   .pano-loading{position:absolute;inset:0;background:rgba(17,17,17,.75);color:#fff;font-size:12px;
     display:flex;align-items:center;justify-content:center;z-index:7;pointer-events:none;}
   .pano-cell + .pano-cell{border-left:2px solid var(--terracota);}
-  .align-row{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:8;
-    display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;
-    background:rgba(0,0,0,.42);padding:6px 12px;border-radius:20px;max-width:92%;
-    opacity:.72;transition:opacity .18s,background .18s;}
-  .align-row:hover{opacity:1;background:rgba(0,0,0,.82);}
-  .align-row .align-title{font-size:11px;font-weight:700;color:#fff;padding:0 6px 0 2px;
+  .align-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;
+    background:var(--blanco);border:1px solid var(--papel-linea);padding:7px 12px;border-radius:20px;
+    margin-bottom:8px;transition:opacity .18s,background .18s;}
+  .align-row .align-title{font-size:11px;font-weight:700;color:var(--grafito);padding:0 6px 0 2px;
     letter-spacing:.02em;white-space:nowrap;}
-  .align-row .align-label{font-size:10.5px;color:rgba(255,255,255,.7);padding:0 2px;}
-  .align-row #offsetLabel{font-size:11px;color:#fff;min-width:30px;text-align:center;}
-  .align-row button{font-size:11px;background:rgba(255,255,255,.18);color:#fff;border:none;
-    padding:6px 10px;border-radius:14px;cursor:pointer;transition:background .15s;}
-  .align-row button:hover{background:var(--marino);}
+  .align-row .align-label{font-size:10.5px;color:var(--grafito);opacity:.6;padding:0 2px;}
+  .align-row #offsetLabel{font-size:11px;color:var(--grafito);min-width:30px;text-align:center;font-weight:600;}
+  .align-row button{font-size:11px;background:var(--blanco);color:var(--grafito);border:1px solid var(--papel-linea);
+    padding:6px 10px;border-radius:14px;cursor:pointer;transition:background .15s,color .15s;}
+  .align-row button:hover{background:var(--marino);color:#fff;border-color:var(--marino);}
+  /* Cuando la comparación está en pantalla completa, la barra flota dentro abajo */
+  .align-row.floating{position:fixed;bottom:34px;left:50%;transform:translateX(-50%);z-index:10000;
+    background:rgba(0,0,0,.5);border:none;opacity:.72;margin-bottom:0;}
+  .align-row.floating:hover{opacity:1;background:rgba(0,0,0,.82);}
+  .align-row.floating .align-title{color:#fff;}
+  .align-row.floating .align-label{color:rgba(255,255,255,.7);opacity:1;}
+  .align-row.floating #offsetLabel{color:#fff;}
+  .align-row.floating button{background:rgba(255,255,255,.18);color:#fff;border:none;}
+  .align-row.floating button:hover{background:var(--marino);}
   .sync-note{font-size:10.5px;color:#a19c8d;margin:-8px 0 12px;}
   .viewer-box.side-by-side{display:flex;}
   .sbs-cell{position:relative;flex:1;height:100%;}
@@ -1425,6 +1432,10 @@ function loadImg(src){
   });
 }
 
+function syncAlignFloating(){
+  const expanded = document.querySelector('.viewer-box.pano-dual.expanded');
+  document.querySelectorAll('.align-row').forEach(r => r.classList.toggle('floating', !!expanded));
+}
 function attachExpand(box){
   const btn = document.createElement('button');
   btn.className = 'expand-btn'; btn.innerHTML = '⤢'; btn.title = 'Pantalla completa';
@@ -1433,6 +1444,7 @@ function attachExpand(box){
     const backdrop = $('expandBackdrop');
     box.classList.toggle('expanded');
     backdrop.classList.toggle('show', box.classList.contains('expanded'));
+    syncAlignFloating();
     resizeAllPanos();
   };
   box.appendChild(btn);
@@ -1440,6 +1452,7 @@ function attachExpand(box){
 $('expandBackdrop').onclick = () => {
   document.querySelectorAll('.viewer-box.expanded').forEach(b => b.classList.remove('expanded'));
   $('expandBackdrop').classList.remove('show');
+  syncAlignFloating();
   resizeAllPanos();
 };
 
@@ -1481,13 +1494,13 @@ function renderCurtainCompare(host, a, b){
 function renderPanoDualCompare(host, a, b){
   const wrap = document.createElement('div');
   wrap.innerHTML = `
+    <div class="align-row" id="alignRow">
+      <span class="align-title">Cuadrar imágenes</span>
+      <button data-d="-15">«</button><button data-d="-5">‹</button>
+      <span id="offsetLabel">0°</span><button data-d="5">›</button><button data-d="15">»</button>
+      <button id="flip180Btn">⟲ 180°</button><button id="resetOffsetBtn">Reiniciar</button>
+    </div>
     <div class="viewer-box pano-dual" id="dualBox">
-      <div class="align-row" id="alignRow">
-        <span class="align-title">Cuadrar imágenes</span>
-        <button data-d="-15">«</button><button data-d="-5">‹</button>
-        <span id="offsetLabel">0°</span><button data-d="5">›</button><button data-d="15">»</button>
-        <button id="flip180Btn">⟲ 180°</button><button id="resetOffsetBtn">Reiniciar</button>
-      </div>
       <div class="pano-cell" id="cellL"><div class="pano360" id="panoL"></div><span class="tag" style="left:8px">${labelOf(a)}</span>
         <div class="pano-loading" id="loadingL">Cargando 360°…</div></div>
       <div class="pano-cell" id="cellR"><div class="pano360" id="panoR"></div><span class="tag" style="right:8px">${labelOf(b)}</span>
@@ -1516,8 +1529,14 @@ function renderPanoDualCompare(host, a, b){
         viewerR = pannellum.viewer('panoR', { type:'equirectangular', panorama:b.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
         panoViewers.push(viewerR);
         try{ viewerR.on('load', () => ocultarCarga('loadingR')); }catch(e){}
-        [200, 500, 1000].forEach(ms => {
-          setTimeout(() => { window.dispatchEvent(new Event('resize')); }, ms);
+        // Forzamos a CADA visor a re-medir su propio contenedor varias veces,
+        // porque pannellum mide el ancho una sola vez al crearse y la mitad
+        // derecha aún no tiene su tamaño final en ese instante (se veía estirada).
+        [60, 200, 500, 1000].forEach(ms => {
+          setTimeout(() => {
+            try{ viewerL.resize(); }catch(e){}
+            try{ viewerR.resize(); }catch(e){}
+          }, ms);
         });
       }, 350);
 
