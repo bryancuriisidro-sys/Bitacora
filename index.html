@@ -1764,7 +1764,10 @@ function renderViewer(fotos){
   const byId = Object.fromEntries(fotos.map(f => [f.id, f]));
 
   if(compareSelection.length === 2){
-    const a = byId[compareSelection[0]], b = byId[compareSelection[1]];
+    let a = byId[compareSelection[0]], b = byId[compareSelection[1]];
+    // La más antigua siempre a la izquierda, la más reciente siempre a la
+    // derecha — sin importar en qué orden se hayan clickeado las dos fotos.
+    if(a && b && a.fecha && b.fecha && a.fecha > b.fecha){ [a, b] = [b, a]; }
     host.innerHTML = '<div class="loading-box">Cargando comparador…</div>';
     Promise.all([loadImg(a.storage_url), loadImg(b.storage_url)]).then(([imgA, imgB]) => {
       host.innerHTML = '';
