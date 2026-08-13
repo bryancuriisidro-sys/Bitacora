@@ -559,6 +559,20 @@ let puntos = [];
 let totalFotosPisoActual = 0;
 let compareSelection = [];
 let modoAgregarPunto = false;
+// Forzamos a que cualquier visor 360 (WebGL) CONSERVE lo que dibuja, en vez de
+// borrarlo apenas lo muestra en pantalla — sin esto, capturar la foto 360 sale
+// negra. Técnica estándar: interceptamos getContext() antes de crear cualquier
+// visor y le agregamos preserveDrawingBuffer:true.
+(function(){
+  const origGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function(type, attrs){
+    if(type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl'){
+      attrs = Object.assign({}, attrs, { preserveDrawingBuffer: true });
+    }
+    return origGetContext.call(this, type, attrs);
+  };
+})();
+
 let panoViewer = null;
 let panoViewers = [];
 function resizeAllPanos(){
@@ -1538,6 +1552,61 @@ function attachCopyButton(box, a, b){
   btn.onclick = (e) => { e.stopPropagation(); copiarComparacionComoImagen(a, b, btn); };
   box.appendChild(btn);
 }
+
+async function copiarPano360ComoImagen(box, a, b, btn){
+  const prevTxt = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const cnvL = box.querySelector('#panoL canvas');
+    const cnvR = box.querySelector('#panoR canvas');
+    if(!cnvL || !cnvR) throw new Error('Los visores 360 aún no están listos');
+    const h = Math.min(cnvL.height, cnvR.height) || 800;
+    const wL = cnvL.width * (h / cnvL.height);
+    const wR = cnvR.width * (h / cnvR.height);
+    const gap = 6;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(wL + wR + gap);
+    canvas.height = Math.round(h);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(cnvL, 0, 0, wL, h);
+    ctx.drawImage(cnvR, wL + gap, 0, wR, h);
+    const etiqueta = (texto, x) => {
+      ctx.font = '600 20px system-ui, sans-serif';
+      const padX = 12;
+      const w = ctx.measureText(texto).width + padX * 2;
+      ctx.fillStyle = 'rgba(0,0,0,.72)';
+      ctx.fillRect(x + 10, h - 42, w, 32);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(texto, x + 10 + padX, h - 20);
+    };
+    etiqueta(planoTagText(a), 0);
+    etiqueta(planoTagText(b), wL + gap);
+
+    canvas.toBlob(async (blob) => {
+      if(!blob){ btn.textContent = '⚠ Error'; setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2200); return; }
+      try{
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+        btn.textContent = '✓ Copiada';
+      }catch(err){
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        btn.textContent = '↗ Ábrela y guárdala';
+      }
+      setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2400);
+    }, 'image/png');
+  }catch(err){
+    btn.textContent = '⚠ Aún cargando…';
+    setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2400);
+  }
+}
+function attachCopy360Button(box, a, b){
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn'; btn.innerHTML = '⧉ Copiar';
+  btn.title = 'Copiar lo que estás viendo en ambas pantallas, ya cuadradas';
+  btn.onclick = (e) => { e.stopPropagation(); copiarPano360ComoImagen(box, a, b, btn); };
+  box.appendChild(btn);
+}
 function attachExpand(box){
   const btn = document.createElement('button');
   btn.className = 'expand-btn'; btn.innerHTML = '⤢'; btn.title = 'Pantalla completa';
@@ -1613,6 +1682,7 @@ function renderPanoDualCompare(host, a, b){
   host.appendChild(wrap);
   const box = wrap.querySelector('#dualBox');
   attachExpand(box);
+  attachCopy360Button(box, a, b);
 
   // Esperamos dos "frames" para que el navegador termine de calcular el ancho
   // real de cada mitad (flex) ANTES de crear los visores — así ninguno de
@@ -1719,7 +1789,7 @@ function renderViewer(fotos){
         panoViewer = pannellum.viewer('panoSolo', { type:'equirectangular', panorama:data.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
         panoViewers.push(panoViewer);
         const tag = document.createElement('span'); tag.className='tag'; tag.style.left='8px';
-        tag.textContent = planoTagText(data) + ' · 360°'; box.appendChild(tag);
+        tag.textContent = planoTagText(data); box.appendChild(tag);
       } else {
         box.innerHTML = `<img src="${data.storage_url}" style="object-fit:contain;"><span class="tag" style="left:8px">${planoTagText(data)}</span>`;
       }
