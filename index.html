@@ -193,7 +193,8 @@
   .handle::before{content:"◂▸";color:#fff;font-size:9px;letter-spacing:1px;}
   .drag-cover{position:absolute;inset:0;z-index:4;cursor:ew-resize;}
   .tag{position:absolute;bottom:8px;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;
-    color:#fff;background:rgba(0,0,0,.7);padding:5px 11px;z-index:5;font-weight:600;border-radius:4px;}
+    color:#fff;background:rgba(0,0,0,.7);padding:5px 11px;z-index:5;font-weight:600;border-radius:4px;
+    max-width:calc(100% - 16px);white-space:normal;line-height:1.35;}
   .pano360{position:absolute;inset:0;}
   .loading-box{padding:30px;text-align:center;color:#a19c8d;font-size:12px;}
 
@@ -231,6 +232,11 @@
   .expand-btn{position:absolute;top:8px;right:8px;z-index:6;background:rgba(0,0,0,.55);
     color:#fff;border:none;width:26px;height:26px;cursor:pointer;font-size:13px;line-height:1;}
   .expand-btn:hover{background:var(--terracota);}
+  .copy-btn{position:absolute;top:8px;right:42px;z-index:6;background:rgba(0,0,0,.55);
+    color:#fff;border:none;height:26px;padding:0 10px;cursor:pointer;font-size:11px;
+    display:flex;align-items:center;gap:4px;white-space:nowrap;transition:background .15s;}
+  .copy-btn:hover{background:var(--marino);}
+  .copy-btn:disabled{opacity:.7;cursor:default;}
   .viewer-box.expanded{position:fixed;inset:16px;z-index:9999;aspect-ratio:auto;box-shadow:0 8px 40px rgba(0,0,0,.5);}
   .expand-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9998;}
   .expand-backdrop.show{display:block;}
@@ -364,6 +370,12 @@
   <div style="background:#fff;padding:26px;max-width:760px;width:100%;max-height:82vh;overflow:auto;border-radius:8px;">
     <h3 style="margin:0 0 4px;font-family:Georgia,serif;font-size:18px;font-weight:400;">Usuarios de todas las empresas</h3>
     <div id="usuariosResumen" style="font-size:12px;color:#6b665c;margin-bottom:16px;"></div>
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:2px solid #E4E0D6;font-size:10.5px;color:#9a948a;text-transform:uppercase;letter-spacing:.04em;">
+      <span style="flex:2;">Correo</span>
+      <span style="flex:1.5;">Empresa</span>
+      <span style="flex:1.3;">Última actividad</span>
+      <span style="flex:1;">Rol</span>
+    </div>
     <div id="usuariosLista"></div>
     <button id="usuariosCerrarBtn" class="del-btn" style="margin-top:16px;width:100%;">Cerrar</button>
   </div>
@@ -646,6 +658,30 @@ $('usersAdminBtn').onclick = async () => {
   const usuarios = data || [];
   const confirmados = usuarios.filter(u => u.confirmado).length;
   $('usuariosResumen').innerHTML = `<b>${usuarios.length}</b> cuentas creadas en total · <b>${confirmados}</b> confirmadas · <b>${usuarios.length - confirmados}</b> pendientes de confirmar su correo`;
+
+  // Última actividad de cada cuenta (leemos la sesión más reciente por usuario)
+  const ultimaActividad = {};
+  try{
+    const { data: ses } = await sb.from('sesiones')
+      .select('usuario_id, ultima_actividad')
+      .order('ultima_actividad', { ascending: false });
+    (ses || []).forEach(s => {
+      if(s.usuario_id && !ultimaActividad[s.usuario_id]) ultimaActividad[s.usuario_id] = s.ultima_actividad;
+    });
+  }catch(e){}
+  function textoActividad(iso){
+    if(!iso) return 'Nunca';
+    const d = new Date(iso), ahora = new Date();
+    const min = Math.round((ahora - d) / 60000);
+    if(min < 2) return 'Ahora mismo';
+    if(min < 60) return 'Hace ' + min + ' min';
+    const hrs = Math.round(min / 60);
+    if(hrs < 24) return 'Hace ' + hrs + ' h';
+    const dias = Math.round(hrs / 24);
+    if(dias < 30) return 'Hace ' + dias + ' d';
+    return d.toLocaleDateString();
+  }
+
   const cont = $('usuariosLista');
   usuarios.forEach(u => {
     const fila = document.createElement('div');
@@ -653,6 +689,7 @@ $('usersAdminBtn').onclick = async () => {
     fila.innerHTML = `
       <span style="flex:2;">${u.email}${u.confirmado ? '' : ' <span style="color:#BA7517;font-size:10px;">(sin confirmar)</span>'}</span>
       <span style="flex:1.5;color:#6b665c;">${u.empresa_nombre || '—'}</span>
+      <span style="flex:1.3;color:#6b665c;font-size:11.5px;">${textoActividad(ultimaActividad[u.id])}</span>
       <select style="flex:1;" data-id="${u.id}">
         <option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Admin</option>
         <option value="editor" ${u.rol === 'editor' ? 'selected' : ''}>Editor</option>
@@ -849,16 +886,18 @@ async function showProyectos(){
     card.onclick = () => openProyecto(p);
     list.appendChild(card);
   });
-  const newCard = document.createElement('div');
-  newCard.className = 'card new';
-  newCard.textContent = '+ Nuevo proyecto';
-  newCard.onclick = async () => {
-    const nombre = prompt('Nombre del proyecto (ej. nombre de la obra):');
-    if(!nombre) return;
-    await sb.from('proyectos').insert({ empresa_id: idEmpresaActiva || miUsuario.empresa_id, nombre });
-    showProyectos();
-  };
-  list.appendChild(newCard);
+  if(miUsuario.rol !== 'visor'){
+    const newCard = document.createElement('div');
+    newCard.className = 'card new';
+    newCard.textContent = '+ Nuevo proyecto';
+    newCard.onclick = async () => {
+      const nombre = prompt('Nombre del proyecto (ej. nombre de la obra):');
+      if(!nombre) return;
+      await sb.from('proyectos').insert({ empresa_id: idEmpresaActiva || miUsuario.empresa_id, nombre });
+      showProyectos();
+    };
+    list.appendChild(newCard);
+  }
 }
 window.showProyectos = showProyectos;
 
@@ -1201,6 +1240,10 @@ function renderSideEmpty(){
 }
 
 function labelOf(f){ return f && f.es_referencia ? (f.etiqueta || 'Diseño / modelo') : (f ? f.fecha : ''); }
+function planoTagText(f){
+  const base = labelOf(f);
+  return (planoActual && planoActual.etiqueta) ? `${base} · ${planoActual.etiqueta}` : base;
+}
 
 function renderSide(pt, fotos){
   const puedoEditar = miUsuario.rol !== 'visor';
@@ -1436,6 +1479,65 @@ function syncAlignFloating(){
   const expanded = document.querySelector('.viewer-box.pano-dual.expanded');
   document.querySelectorAll('.align-row').forEach(r => r.classList.toggle('floating', !!expanded));
 }
+async function copiarComparacionComoImagen(a, b, btn){
+  const prevTxt = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const cargar = (url) => new Promise((res, rej) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error('No se pudo cargar la foto'));
+      img.src = url;
+    });
+    const [imgA, imgB] = await Promise.all([cargar(a.storage_url), cargar(b.storage_url)]);
+    const h = Math.min(imgA.naturalHeight, imgB.naturalHeight, 1400);
+    const wA = imgA.naturalWidth * (h / imgA.naturalHeight);
+    const wB = imgB.naturalWidth * (h / imgB.naturalHeight);
+    const gap = 6;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(wA + wB + gap);
+    canvas.height = Math.round(h);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(imgA, 0, 0, wA, h);
+    ctx.drawImage(imgB, wA + gap, 0, wB, h);
+    const etiqueta = (texto, x) => {
+      ctx.font = '600 20px system-ui, sans-serif';
+      const padX = 12;
+      const w = ctx.measureText(texto).width + padX * 2;
+      ctx.fillStyle = 'rgba(0,0,0,.72)';
+      ctx.fillRect(x + 10, h - 42, w, 32);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(texto, x + 10 + padX, h - 20);
+    };
+    etiqueta(planoTagText(a), 0);
+    etiqueta(planoTagText(b), wA + gap);
+
+    canvas.toBlob(async (blob) => {
+      if(!blob){ btn.textContent = '⚠ Error'; setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2200); return; }
+      try{
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+        btn.textContent = '✓ Copiada';
+      }catch(err){
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        btn.textContent = '↗ Ábrela y guárdala';
+      }
+      setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2400);
+    }, 'image/png');
+  }catch(err){
+    btn.textContent = '⚠ Error de conexión';
+    setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2400);
+  }
+}
+function attachCopyButton(box, a, b){
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn'; btn.innerHTML = '⧉ Copiar';
+  btn.title = 'Copiar las dos fotos juntas al portapapeles';
+  btn.onclick = (e) => { e.stopPropagation(); copiarComparacionComoImagen(a, b, btn); };
+  box.appendChild(btn);
+}
 function attachExpand(box){
   const btn = document.createElement('button');
   btn.className = 'expand-btn'; btn.innerHTML = '⤢'; btn.title = 'Pantalla completa';
@@ -1469,13 +1571,14 @@ function renderCurtainCompare(host, a, b){
   box.innerHTML = `
     <img class="img-after" src="${b.storage_url}">
     <img class="img-before" src="${a.storage_url}">
-    <span class="tag" style="left:8px">${labelOf(a)}</span>
-    <span class="tag" style="right:8px">${labelOf(b)}</span>
+    <span class="tag" style="left:8px">${planoTagText(a)}</span>
+    <span class="tag" style="right:8px">${planoTagText(b)}</span>
     <div class="divider" id="divider"><div class="line"></div><div class="handle"></div></div>
     <div class="drag-cover" id="dragCover"></div>
   `;
   host.appendChild(box);
   attachExpand(box);
+  attachCopyButton(box, a, b);
   const before = box.querySelector('.img-before');
   const divider = box.querySelector('.divider');
   const cover = box.querySelector('.drag-cover');
@@ -1501,9 +1604,9 @@ function renderPanoDualCompare(host, a, b){
       <button id="flip180Btn">⟲ 180°</button><button id="resetOffsetBtn">Reiniciar</button>
     </div>
     <div class="viewer-box pano-dual" id="dualBox">
-      <div class="pano-cell" id="cellL"><div class="pano360" id="panoL"></div><span class="tag" style="left:8px">${labelOf(a)}</span>
+      <div class="pano-cell" id="cellL"><div class="pano360" id="panoL"></div><span class="tag" style="left:8px">${planoTagText(a)}</span>
         <div class="pano-loading" id="loadingL">Cargando 360°…</div></div>
-      <div class="pano-cell" id="cellR"><div class="pano360" id="panoR"></div><span class="tag" style="right:8px">${labelOf(b)}</span>
+      <div class="pano-cell" id="cellR"><div class="pano360" id="panoR"></div><span class="tag" style="right:8px">${planoTagText(b)}</span>
         <div class="pano-loading" id="loadingR">Cargando 360°…</div></div>
     </div>
     <div class="sync-note">Arrastra dentro de cualquiera para girar — la otra te sigue.</div>`;
@@ -1570,10 +1673,11 @@ function renderSideBySide(host, a, b){
   const box = document.createElement('div');
   box.className = 'viewer-box side-by-side';
   box.innerHTML = `
-    <div class="sbs-cell"><img src="${a.storage_url}"><span class="tag" style="left:8px">${labelOf(a)}</span></div>
-    <div class="sbs-cell"><img src="${b.storage_url}"><span class="tag" style="left:8px">${labelOf(b)}</span></div>`;
+    <div class="sbs-cell"><img src="${a.storage_url}"><span class="tag" style="left:8px">${planoTagText(a)}</span></div>
+    <div class="sbs-cell"><img src="${b.storage_url}"><span class="tag" style="left:8px">${planoTagText(b)}</span></div>`;
   host.appendChild(box);
   attachExpand(box);
+  attachCopyButton(box, a, b);
   const note = document.createElement('div');
   note.className = 'mixed-note';
   note.textContent = 'Una es 360° y la otra no — se muestran lado a lado.';
@@ -1615,9 +1719,9 @@ function renderViewer(fotos){
         panoViewer = pannellum.viewer('panoSolo', { type:'equirectangular', panorama:data.storage_url, autoLoad:true, showControls:false, compass:false, hfov:100 });
         panoViewers.push(panoViewer);
         const tag = document.createElement('span'); tag.className='tag'; tag.style.left='8px';
-        tag.textContent = labelOf(data) + ' · 360°'; box.appendChild(tag);
+        tag.textContent = planoTagText(data) + ' · 360°'; box.appendChild(tag);
       } else {
-        box.innerHTML = `<img src="${data.storage_url}" style="object-fit:contain;"><span class="tag" style="left:8px">${labelOf(data)}</span>`;
+        box.innerHTML = `<img src="${data.storage_url}" style="object-fit:contain;"><span class="tag" style="left:8px">${planoTagText(data)}</span>`;
       }
     };
     img.src = data.storage_url;
