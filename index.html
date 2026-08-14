@@ -1607,6 +1607,98 @@ function attachCopy360Button(box, a, b){
   btn.onclick = (e) => { e.stopPropagation(); copiarPano360ComoImagen(box, a, b, btn); };
   box.appendChild(btn);
 }
+
+async function copiarFotoSolaComoImagen(data, btn){
+  const prevTxt = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error('No se pudo cargar la foto'));
+      im.src = data.storage_url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const texto = planoTagText(data);
+    ctx.font = `600 ${Math.max(20, Math.round(canvas.width / 55))}px system-ui, sans-serif`;
+    const padX = 14;
+    const w = ctx.measureText(texto).width + padX * 2;
+    const alto = Math.max(32, Math.round(canvas.width / 45));
+    ctx.fillStyle = 'rgba(0,0,0,.72)';
+    ctx.fillRect(14, canvas.height - alto - 14, w, alto);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(texto, 14 + padX, canvas.height - 14 - alto * 0.32);
+    canvas.toBlob(async (blob) => {
+      if(!blob){ btn.textContent = '⚠ Error'; setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2200); return; }
+      try{
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+        btn.textContent = '✓ Copiada';
+      }catch(err){
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        btn.textContent = '↗ Ábrela y guárdala';
+      }
+      setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2400);
+    }, 'image/png');
+  }catch(err){
+    btn.textContent = '⚠ Error de conexión';
+    setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2400);
+  }
+}
+
+async function copiarPanoSoloComoImagen(box, data, btn){
+  const prevTxt = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const cnv = box.querySelector('#panoSolo canvas');
+    if(!cnv) throw new Error('El visor 360 aún no está listo');
+    const canvas = document.createElement('canvas');
+    canvas.width = cnv.width;
+    canvas.height = cnv.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(cnv, 0, 0);
+    const texto = planoTagText(data);
+    ctx.font = `600 ${Math.max(20, Math.round(canvas.width / 55))}px system-ui, sans-serif`;
+    const padX = 14;
+    const w = ctx.measureText(texto).width + padX * 2;
+    const alto = Math.max(32, Math.round(canvas.width / 45));
+    ctx.fillStyle = 'rgba(0,0,0,.72)';
+    ctx.fillRect(14, canvas.height - alto - 14, w, alto);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(texto, 14 + padX, canvas.height - 14 - alto * 0.32);
+    canvas.toBlob(async (blob) => {
+      if(!blob){ btn.textContent = '⚠ Error'; setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2200); return; }
+      try{
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+        btn.textContent = '✓ Copiada';
+      }catch(err){
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        btn.textContent = '↗ Ábrela y guárdala';
+      }
+      setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2400);
+    }, 'image/png');
+  }catch(err){
+    btn.textContent = '⚠ Aún cargando…';
+    setTimeout(() => { btn.textContent = prevTxt; btn.disabled = false; }, 2400);
+  }
+}
+function attachCopySoloButton(box, data, isPano){
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn'; btn.innerHTML = '⧉ Copiar';
+  btn.title = 'Copiar esta foto al portapapeles';
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    if(isPano){ copiarPanoSoloComoImagen(box, data, btn); }
+    else { copiarFotoSolaComoImagen(data, btn); }
+  };
+  box.appendChild(btn);
+}
 function attachExpand(box){
   const btn = document.createElement('button');
   btn.className = 'expand-btn'; btn.innerHTML = '⤢'; btn.title = 'Pantalla completa';
@@ -1793,8 +1885,10 @@ function renderViewer(fotos){
         panoViewers.push(panoViewer);
         const tag = document.createElement('span'); tag.className='tag'; tag.style.left='8px';
         tag.textContent = planoTagText(data); box.appendChild(tag);
+        attachCopySoloButton(box, data, true);
       } else {
-        box.innerHTML = `<img src="${data.storage_url}" style="object-fit:contain;"><span class="tag" style="left:8px">${planoTagText(data)}</span>`;
+        box.insertAdjacentHTML('afterbegin', `<img src="${data.storage_url}" style="object-fit:contain;"><span class="tag" style="left:8px">${planoTagText(data)}</span>`);
+        attachCopySoloButton(box, data, false);
       }
     };
     img.src = data.storage_url;
